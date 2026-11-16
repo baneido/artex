@@ -32,10 +32,10 @@ import { cn } from "@/lib/utils";
 
 import { ProfileRetryFields, RetryPolicyPanel, ZERO_OVERRIDE } from "./_components/retry";
 
-// 思考开关(thinking.type)与思考强度(reasoning_effort)是两个【互相独立】的字段，
-// 各自单独设置——有些接口没有 thinking 字段、只靠强度参数就能激活思考，故需解耦。
-// 存库空字符串 = 该字段【不发送】；Radix Select 不接受空 value，故 UI 用 "none"
-// 哨兵表示不发送，存取时与 "" 互转（NONE / fromStore / toStore）。
+// 思考スイッチ（thinking.type）と思考の強さ（reasoning_effort）は【互いに独立】したフィールドである。
+// それぞれ別に設定する。thinking フィールドが無く、強さのパラメータだけで思考を有効にする API があるので、分ける必要がある。
+// 庫に空文字を入れるとそのフィールドを【送らない】。Radix Select は空の value を受け付けないので、UI は "none"
+// を哨兵にして送らないことを表し、保存と読み出しで "" と相互変換する（NONE / fromStore / toStore）。
 const NONE = "none";
 const fromStore = (v?: string) => (v ? v : NONE);
 const toStore = (v: string) => (v === NONE ? "" : v);
@@ -44,12 +44,12 @@ const THINKING_TYPES: { value: string; label: string }[] = [
   { value: "disabled", label: "無効" },
   { value: "enabled", label: "有効" },
 ];
-// 输出上限用哪个请求字段名（仅 openai 格式有意义）。NONE ↔ "" 走同一套哨兵转换。
+// 出力上限に使うリクエストフィールド名（openai 形式だけ意味がある）。NONE と "" は同じ哨兵変換を使う。
 const MAX_TOKENS_FIELDS: { value: string; label: string }[] = [
   { value: NONE, label: "max_tokens（デフォルト）" },
   { value: "max_completion_tokens", label: "max_completion_tokens" },
 ];
-// 另外两种格式各自定死了字段名，选项对它们无意义，说明文案里直接讲清楚。
+// ほかの2形式はフィールド名が決まっている。選択肢はそれらには意味が無いので、説明文で直接書く。
 const MAX_TOKENS_FIELD_HINTS: Record<string, string> = {
   openai:
     "上限をどのキーで送るかを指定します。max_tokens がデフォルトで、ほとんどの互換ゲートウェイはこれだけを受け付けます。OpenAI 公式の推論モデル（o シリーズ / GPT-5）は逆に max_completion_tokens だけを受け付け、max_tokens を受け取ると unsupported_parameter を返します。",
@@ -72,8 +72,8 @@ function cooldownText(secs: number) {
   return `${Math.ceil(secs / 60)}min`;
 }
 
-// 一个配置在卡片上显示的「是否正常」。没填 Key 的配置根本发不出请求，比熔断更该先说；
-// 其余状态来自轮询的熔断记录（轮询关着时不会产生新记录，此时「正常」= 没有已知故障）。
+// ある設定がカードに出す「正常か」。Key が空の設定はそもそもリクエストを出せないので、遮断より先に言う。
+// ほかの状態はローテーションの遮断記録から取る（ローテーションがオフのときは新しい記録ができない。このときの「正常」は既知の故障が無いこと）。
 type Health = { label: string; cls: string; hint?: string };
 function healthOf(p: LLMProfile, m?: LLMPoolMember): Health {
   if (!p.api_key_hint) {
@@ -101,7 +101,7 @@ function healthOf(p: LLMProfile, m?: LLMPoolMember): Health {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 轮询配置抽屉
+// ローテーション設定のドロワー
 // ─────────────────────────────────────────────────────────────────────────────
 
 function PoolSheet({
@@ -117,7 +117,7 @@ function PoolSheet({
 }) {
   const [busy, setBusy] = React.useState(false);
 
-  // 冷却倒计时是后端算出的剩余秒数——抽屉开着且有配置不正常时才定时拉，让它走起来。
+  // 冷却のカウントダウンはバックエンドが計算した残り秒。ドロワーが開いていて、正常でない設定があるときだけ定期的に取り、進ませる。
   React.useEffect(() => {
     if (!open || !pool?.enabled || !pool.chain.some((m) => m.state !== "ok")) return;
     const t = setInterval(() => void onReload(), 10_000);
@@ -156,7 +156,7 @@ function PoolSheet({
 
   const enabled = pool?.enabled ?? false;
   const chain = pool?.chain ?? [];
-  // 参与轮询的成员（排除被标记「不参与轮询」的），顺序即后端实际的尝试顺序。
+  // ローテーションに入るメンバー（「ローテーションに入らない」と印が付いたものは除く）。順序はバックエンドが実際に試す順序。
   const inChain = chain.filter((m) => m.active || !m.excluded);
   const tripped = chain.filter((m) => m.state === "tripped");
 
@@ -305,7 +305,7 @@ function PoolSheet({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 模型配置抽屉（新建 / 编辑共用同一套表单）
+// モデル設定のドロワー（新規と編集は同じフォーム）
 // ─────────────────────────────────────────────────────────────────────────────
 
 function ProfileSheet({
@@ -329,24 +329,24 @@ function ProfileSheet({
   const [keyHint, setKeyHint] = React.useState("");
   const [rps, setRps] = React.useState("0");
   const [rpm, setRpm] = React.useState("0");
-  const [cw, setCw] = React.useState("0"); // 上下文窗口(K tokens);0=默认200K
+  const [cw, setCw] = React.useState("0"); // コンテキストウィンドウ（K tokens）。0 は既定 200K
   const [thinkingType, setThinkingType] = React.useState(NONE);
   const [effort, setEffort] = React.useState(NONE);
-  const [priority, setPriority] = React.useState("0"); // 轮询顺位;越大越先
+  const [priority, setPriority] = React.useState("0"); // ローテーションの順位。大きいほど先
   const [poolExclude, setPoolExclude] = React.useState(false);
-  const [streaming, setStreaming] = React.useState(true); // true=流式(默认);false=非流式
-  const [maxTokens, setMaxTokens] = React.useState("0"); // 单次回复输出上限;0=不发送
-  const [maxTokensField, setMaxTokensField] = React.useState(NONE); // 上限用哪个字段名;NONE=max_tokens
-  const [sessionHeaderKey, setSessionHeaderKey] = React.useState(""); // 自定义会话头名;空=不发送
-  const [retry, setRetry] = React.useState<LLMRetryOverride>(ZERO_OVERRIDE); // 本配置的重试覆盖;全 0=跟随全局
+  const [streaming, setStreaming] = React.useState(true); // true はストリーミング（既定）。false は非ストリーミング
+  const [maxTokens, setMaxTokens] = React.useState("0"); // 1回の応答の出力上限。0 は送らない
+  const [maxTokensField, setMaxTokensField] = React.useState(NONE); // 上限に使うフィールド名。NONE は max_tokens
+  const [sessionHeaderKey, setSessionHeaderKey] = React.useState(""); // カスタムのセッションヘッダ名。空は送らない
+  const [retry, setRetry] = React.useState<LLMRetryOverride>(ZERO_OVERRIDE); // この設定の再試行上書き。すべて 0 はグローバルに従う
   const [testing, setTesting] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
   const [models, setModels] = React.useState<string[]>([]);
   const [loadingModels, setLoadingModels] = React.useState(false);
   const [modelsOpen, setModelsOpen] = React.useState(false);
 
-  // 每次打开时从传入的 profile 灌一遍表单（新建则重置为默认值）。抽屉关掉再打开
-  // 就是一次干净的开始，不会留下上一个配置的残影。
+  // 開くたびに渡された profile でフォームを埋める（新規なら既定値へ戻す）。ドロワーを閉じて開き直すと
+  // きれいな開始になり、前の設定の残りは残らない。
   React.useEffect(() => {
     if (!open) return;
     setName(profile?.name ?? "");
@@ -398,8 +398,8 @@ function ProfileSheet({
     if (testing) return;
     setTesting(true);
     try {
-      // 用配置实际会跑的思考参数来测，这样不支持该字段的模型在这里就失败，
-      // 而不是等到跑任务时才炸。传 profile id：Key 输入框留空时用已存的 Key。
+      // 設定が実際に使う思考パラメータで試す。そのフィールドをサポートしないモデルはここで失敗する。
+      // タスク実行まで待って壊れない。profile id を渡す。Key の入力欄が空なら、保存済みの Key を使う。
       const r = await api.testLLM(
         format,
         model,
@@ -412,7 +412,7 @@ function ProfileSheet({
         streaming,
         sessionHeaderKey.trim(),
       );
-      // 回复内容一并展示：看得见模型确实说了话，才算和会话里跑通是一回事。
+      // 応答の内容も出す。モデルが本当に話したと見えて、セッションで通ったことと同じになる。
       if (r.ok)
         toast.success(`接続成功 · ${r.latency_ms ?? "?"}ms · ${r.model ?? model}`, {
           description: r.reply ? `応答：${r.reply}` : undefined,
@@ -450,8 +450,8 @@ function ProfileSheet({
         pool_exclude: poolExclude,
         streaming,
         max_tokens: Math.max(0, Number(maxTokens) || 0),
-        // 字段名开关只对 openai(Chat Completions) 有意义，其它格式一律回落到默认；
-        // 后端也会再做一次同样的归一化，这里只是别让 UI 送出自相矛盾的值。
+        // フィールド名のスイッチは openai（Chat Completions）だけに意味がある。ほかの形式はすべて既定へ戻す。
+        // バックエンドも同じ正規化をもう一度する。ここでは UI が矛盾した値を送らないようにするだけ。
         max_tokens_field: format === "openai" ? toStore(maxTokensField) : "",
         session_header_key: sessionHeaderKey.trim(),
         retry,
@@ -523,8 +523,8 @@ function ProfileSheet({
                 value={model}
                 onChange={(e) => setModel(e.target.value)}
               />
-              {/* modal: 这个 Popover 的内容被 portal 到 <body>，在 Sheet 的滚动锁之外，
-                  不加 modal 时列表能渲染却滚不动。modal 让它自己持有最上层滚动锁。 */}
+              {/* modal。この Popover の内容は <body> へ portal され、Sheet のスクロールロックの外にある。
+                  modal を付けないと一覧は描画されるがスクロールできない。modal は最上位のスクロールロックを自分で持つ。 */}
               <Popover open={modelsOpen} onOpenChange={setModelsOpen} modal>
                 <PopoverTrigger asChild>
                   <Button
@@ -806,8 +806,8 @@ export default function LLMPage() {
   const [profiles, setProfiles] = React.useState<LLMProfile[]>([]);
   const [pool, setPool] = React.useState<LLMPoolStatus | null>(null);
   const [poolOpen, setPoolOpen] = React.useState(false);
-  // 抽屉的开关和内容分开存：关闭时 editing 保持不变，否则关闭动画期间标题会从
-  // 「编辑 X」闪成「新建」。editing = null 表示新建。
+  // ドロワーの開閉と内容は別に持つ。閉じるとき editing は変えない。変えると、閉じるアニメーションのあいだタイトルが
+  // 「X を編集」から「新規」へちらつく。editing = null は新規。
   const [editOpen, setEditOpen] = React.useState(false);
   const [editing, setEditing] = React.useState<LLMProfile | null>(null);
   const openEditor = React.useCallback((p: LLMProfile | null) => {
@@ -836,7 +836,7 @@ export default function LLMPage() {
     void load();
   }, [load]);
 
-  // 卡片上的健康徽章按 profile id 取轮询状态。
+  // カードの健全性バッジは profile id でローテーション状態を取る。
   const health = React.useMemo(() => {
     const m = new Map<string, LLMPoolMember>();
     for (const c of pool?.chain ?? []) m.set(c.profile_id, c);
@@ -905,7 +905,7 @@ export default function LLMPage() {
             {profiles.map((p) => {
               const h = healthOf(p, health.get(p.id));
               return (
-                // biome-ignore lint/a11y/useSemanticElements: 卡片内含自己的操作按钮，用原生 <button> 会造成按钮嵌套（非法 HTML）
+                // biome-ignore lint/a11y/useSemanticElements: カードは自分の操作ボタンを含む。ネイティブの <button> を使うとボタンの入れ子になり、不正な HTML になる
                 <Card
                   key={p.id}
                   role="button"
@@ -953,7 +953,7 @@ export default function LLMPage() {
                       {p.reasoning_effort && (
                         <span>思考 {p.reasoning_effort === "off" ? "オフ" : p.reasoning_effort}</span>
                       )}
-                      {/* 轮询相关的两个字段只在轮询开着时才有意义，关着时不占版面 */}
+                      {/* ローテーションに関係する2つのフィールドは、ローテーションがオンのときだけ意味がある。オフのときは場所を取らない */}
                       {poolOn &&
                         !p.is_default &&
                         (p.pool_exclude ? <span>ローテーション対象外</span> : <span>優先度 {p.priority ?? 0}</span>)}

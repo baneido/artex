@@ -66,9 +66,9 @@ type Recorder struct {
 	pg    *db.DB
 	model string // model name (from config, not in CompletionRequest)
 	prof  string // LLM profile name (from llm_profiles)
-	// thinkingType / reasoningEffort 是配置级思考参数(思考开关 / 思考强度)。它们在
-	// norma 的 buildBody() 里从 provider 配置注入真正的 HTTP body,不出现在
-	// CompletionRequest 上,故 Recorder 需在此单独带一份,序列化时写进录制。
+	// thinkingType / reasoningEffort は設定レベルの思考パラメータ（思考のオンオフと強度）だ。
+	// norma の buildBody() が provider 設定から本来の HTTP body へ注入し、
+	// CompletionRequest には載らない。そのため Recorder が別に持ち、直列化のときに記録へ書く。
 	thinkingType    string
 	reasoningEffort string
 	enabled         func() bool // reports whether recording is currently on; nil = always record
@@ -358,9 +358,10 @@ func (r *Recorder) serializeRequest(req llm.CompletionRequest) string {
 		"messages":   req.Messages,
 		"max_tokens": req.MaxTokens,
 	}
-	// 记录本次调用实际发出的思考参数。type 采用「有效值」：每请求覆盖 req.Thinking
-	// 优先于配置级 thinkingType(与 norma buildBody 的判定一致，如 compaction 摘要会
-	// 强制 disabled)；effort 无每请求覆盖，直接取配置值。两者皆空则不写 thinking 字段。
+	// この呼び出しで実際に送った思考パラメータを記録する。type は有効値を使う。
+	// リクエストごとの req.Thinking は設定レベルの thinkingType より優先する
+	// （norma の buildBody と同じ判定。compaction の要約は disabled を強制する）。
+	// effort にリクエストごとの上書きはなく、設定値をそのまま取る。両方が空なら thinking フィールドは書かない。
 	effType := r.thinkingType
 	if req.Thinking != "" {
 		effType = req.Thinking

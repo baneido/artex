@@ -1,12 +1,12 @@
 // ARTEX domain model — types used across the UI.
-// Derived from the functional spec (section 7: 关键数据形状).
+// Derived from the functional spec (section 7: 主要なデータ形状).
 
 export type TaskStatus = "created" | "queued" | "running" | "paused" | "done" | "failed" | "timeout";
 export type EngineMode = "exploring" | "paused" | "stalled" | "idle";
 
 export interface Task {
   id: string;
-  name?: string; // 可选任务名称;空/缺省=未命名,展示时回退到描述
+  name?: string; // 任意のタスク名。空または未指定は未命名で、表示時は説明に戻す
   category_id?: number;
   category_name?: string;
   pinned?: boolean;
@@ -23,7 +23,7 @@ export interface Task {
   queued?: boolean;
   active?: boolean;
   in_flight?: number;
-  findings?: { critical: number; high: number; medium: number; low: number }; // 已登记漏洞数(按严重度分档)
+  findings?: { critical: number; high: number; medium: number; low: number }; // 登録済み脆弱性数（深刻度別）
   last_activity?: string;
   stalled?: boolean;
   goals_total?: number;
@@ -38,7 +38,7 @@ export interface Task {
   source_task_ids?: string[]; // directly related tasks inherited as read-only context
   archive_blocked_by_task_id?: string; // live direct dependent that must be archived first
   company_ids?: number[]; // associated company scopes; current company assets join the task at creation
-  coverage_enabled?: boolean; // 资产覆盖度功能开关(创建时定,默认开)；false=不计算/不展示覆盖度
+  coverage_enabled?: boolean; // 資産カバレッジ機能のスイッチ（作成時に決まり、既定はオン）。false はカバレッジを計算も表示もしない
 }
 
 export interface TaskCategory {
@@ -54,8 +54,8 @@ export interface TaskTemplate {
   name: string;
   description: string;
   goal: string;
-  category_id?: number | null; // 预设分类；null/缺省=无
-  intercept_rules?: AssetInterceptRuleInput[]; // 预设的任务级拦截/允许规则
+  category_id?: number | null; // 事前設定の分類。null または未指定はなし
+  intercept_rules?: AssetInterceptRuleInput[]; // 事前設定のタスク単位インターセプト/許可ルール
   created_at: string;
   updated_at: string;
 }
@@ -169,7 +169,7 @@ export interface AssetNode {
   name: string;
   key: string; // nkey
   value?: string;
-  company_id?: string; // 归属公司资产 id；空=未归属
+  company_id?: string; // 所属企業の資産 id。空は未所属
   state: NodeState;
   confidence: number; // 0..1
   attrs?: Record<string, unknown>;
@@ -284,8 +284,8 @@ export interface TaskAssetScopeMutation {
 }
 
 // ---- Asset coverage graph (per task) ----
-// 力导向「资产覆盖图」的一个节点。key 唯一：资产="a:<id>"、公司="c:<id>"、
-// 无资产行的根域名="r:<domain>"。in_scope=false 的是仅用于连线的灰色上下文节点。
+// 力指向の「資産カバレッジ図」の1ノード。key は一意。資産は "a:<id>"、企業は "c:<id>"、
+// 資産行のないルートドメインは "r:<domain>"。in_scope=false は結線のためだけの灰色の文脈ノード。
 export interface CoverageGraphNode {
   key: string;
   kind: "company" | "root_domain" | "subdomain" | "ip" | "service" | "app" | "endpoint";
@@ -315,7 +315,7 @@ export interface CoverageGraphData {
   edges: CoverageGraphEdge[];
 }
 
-// 某资产在本任务探索图里关联到的意图/事实/发现（覆盖图节点抽屉用）。
+// ある資産がこのタスクの探索グラフで関連付くインテント、事実、検出事項（カバレッジ図ノードのドロワー用）。
 export interface CoverageAssetRef {
   id: number;
   kind: string;
@@ -350,13 +350,13 @@ export interface WorkspaceFile {
   content?: string;
 }
 
-// 任务测试范围的一条（覆盖度分母 + 授权边界）。
+// タスクのテスト範囲の1件（カバレッジの分母と認可境界）。
 export interface TaskScopeRow {
   id: number;
   task_id: number;
   kind: "company" | "root_domain" | "subdomain" | "ip" | "cidr" | "icp" | "keyword";
   company_id?: number;
-  company_name?: string; // 后端 JOIN companies 解析，仅 kind=company 有值
+  company_name?: string; // バックエンドが companies を JOIN して解決する。kind=company のときだけ値がある
   domain?: string;
   net?: string;
   value?: string;
@@ -366,14 +366,14 @@ export interface TaskScopeRow {
 
 export type CompanyScopeKind = "domain" | "ip" | "cidr" | "icp" | "keyword";
 
-// 新增企业时提交的结构化资产范围规则。
+// 企業を追加するときに送る、構造化された資産範囲ルール。
 export interface CompanyScopeRule {
   kind: CompanyScopeKind;
   value: string;
 }
 
-// 资产范围写入的结果。errors 是本次提交里不合法的行；warnings 是与本次提交无关、
-// 但会让归属结果不符合预期的既有数据问题（如 ip 字段存了主机名的资产）。
+// 資産範囲を書き込んだ結果。errors は今回の送信で不正な行。warnings は今回の送信とは無関係だが、
+// 所属結果が想定とずれる既存データの問題（ip フィールドにホスト名が入った資産など）。
 export interface CompanyScopeMutation {
   added: number;
   skipped: number;
@@ -382,23 +382,23 @@ export interface CompanyScopeMutation {
   warnings?: string[];
 }
 
-// 公司资产范围规则的一条（归属唯一真值来源）。
+// 企業の資産範囲ルールの1件（所属の唯一の正）。
 export interface ScopeRow {
   id: number;
   company_id: number;
   kind: CompanyScopeKind;
-  domain?: string; // kind=domain 时有值
-  net?: string; // kind=ip|cidr 时有值
-  value?: string; // kind=icp|keyword 时可能由后端直接返回
-  raw: string; // 原始用户输入，用于显示和回填
+  domain?: string; // kind=domain のとき値がある
+  net?: string; // kind=ip|cidr のとき値がある
+  value?: string; // kind=icp|keyword のときバックエンドが直接返すことがある
+  raw: string; // ユーザーの元の入力。表示と再入力に使う
   reason?: string;
 }
 
-// 企业：type=company 的资产节点 + 图标 + 资产计数 + 资产范围规则。
+// 企業。type=company の資産ノード、アイコン、資産数、資産範囲ルール。
 export interface Company {
   id: number;
   name: string;
-  logo?: string; // 远程图标 URL；空则前端用名称首字母
+  logo?: string; // リモートのアイコン URL。空ならフロントは名称の頭文字を使う
   asset_count: number;
   scope?: ScopeRow[];
 }
@@ -421,11 +421,11 @@ export interface TaskNode {
   ts: string;
   source_task_id?: string;
   inherited?: boolean;
-  delete_reason?: string; // 意图假删除(state='deleted')时的删除原因
+  delete_reason?: string; // インテントの論理削除（state='deleted'）のときの削除理由
 }
 
-// 播报板一页:按创建顺序分页的节点 + 这一页涉及的边 + 边另一端的节点(refs,按 id 索引),
-// 这样每条播报都能说清「从哪来、产出了什么」,而不用把整张图拉下来。
+// ブロードキャストボードの1ページ。作成順でページ分割したノード、このページに関わる辺、辺の反対側のノード（refs、id で引く）。
+// これで各投稿が「どこから来て、何を出したか」を説明でき、グラフ全体を取らなくてよい。
 export interface ExplorationNodePage {
   items: TaskNode[];
   total: number;
@@ -433,7 +433,7 @@ export interface ExplorationNodePage {
   size: number;
   edges: Edge[];
   refs: Record<string, TaskNode>;
-  // 节点 id → 该节点锚定的资产(播报板展开时顺带展示,含本页节点与其邻居)。
+  // ノード id から、そのノードがアンカーする資産（ブロードキャストボードを展開するときに併せて出す。このページのノードとその隣接を含む）。
   assets: Record<string, FindingAsset[]>;
 }
 
@@ -446,7 +446,7 @@ export interface ExplorationNodeQuery {
   order?: "asc" | "desc";
 }
 
-// 目标管理卡片用的目标(后端已把 payload 拆成 text/vulnclass)。
+// 目標管理カード用の目標（バックエンドが payload を text/vulnclass に分け済み）。
 export interface TaskGoal {
   id: string;
   text: string;
@@ -456,7 +456,7 @@ export interface TaskGoal {
   ts: string;
 }
 
-// 约束管理卡片用的操作约束(allow=允许 / deny=禁止)。
+// 制約管理カード用の操作制約（allow=許可 / deny=禁止）。
 export type ConstraintKind = "allow" | "deny";
 export interface TaskConstraint {
   id: string;
@@ -469,7 +469,7 @@ export interface TaskConstraint {
 // ---- Findings ----
 export type Severity = "critical" | "high" | "medium" | "low";
 
-// 漏洞处置状态:待处理 / 处理中 / 已确认 / 已处理 / 已修复 / 误报 / 忽略 / 重复 / 风险接受。
+// 脆弱性の対応状態。未対応 / 対応中 / 確認済み / 対応済み / 修正済み / 誤検知 / 無視 / 重複 / リスク受容。
 export type FindingStatus =
   | "pending"
   | "in_progress"
@@ -481,7 +481,7 @@ export type FindingStatus =
   | "duplicate"
   | "risk_accepted";
 
-// FindingAsset 是一个漏洞绑定的资产(已在后端预渲染 label)。
+// FindingAsset は脆弱性に関連付いた資産（label はバックエンドで事前に描画済み）。
 export interface FindingAsset {
   id: string;
   type: string;
@@ -494,14 +494,14 @@ export interface Finding {
   report_evidence_version?: number;
   report_stale?: boolean;
   id: string;
-  finding_id?: string; // 独立 findings 表的行 id,状态更新的句柄(任务内旧节点可能缺失)
+  finding_id?: string; // 独立した findings 表の行 id。状態更新のハンドル（タスク内の古いノードには無いことがある）
   vulnclass: string;
-  name?: string; // 漏洞名称;为空时展示回退到 vulnclass
+  name?: string; // 脆弱性の名称。空のときは表示を vulnclass に戻す
   severity: Severity;
   status: FindingStatus;
   summary: string;
   evidence: string;
-  report?: string; // 详细报告(Markdown);仅详情接口返回,列表为空
+  report?: string; // 詳細レポート（Markdown）。詳細 API だけが返し、一覧では空
   intent_id?: string;
   param_id?: string;
   task_id?: string;
@@ -512,7 +512,7 @@ export interface Finding {
   ts: string;
 }
 
-// FindingsPage 是发现列表的服务端分页响应。
+// FindingsPage は検出事項一覧のサーバー側ページング応答である。
 export interface FindingsPage {
   items: Finding[];
   total: number;
@@ -522,7 +522,7 @@ export interface FindingsPage {
 
 export interface FindingGroup {
   task_id: string | number | null;
-  task_name?: string; // 可选任务名称;空/缺省=未命名
+  task_name?: string; // 任意のタスク名。空または未指定は未命名
   task_description: string;
   task_status: string;
   count: number;
@@ -548,7 +548,7 @@ export interface FindingDeepenResponse {
   queued: boolean;
 }
 
-// FindingStats 是发现全表聚合(统计卡 + 漏洞类型下拉),服务端计算,不受分页影响。
+// FindingStats は検出事項の全表集計（統計カードと脆弱性種別のプルダウン）。サーバーで計算し、ページングの影響を受けない。
 export interface FindingStats {
   total: number;
   pending: number;
@@ -560,34 +560,34 @@ export interface FindingStats {
   tasks: FindingTaskOption[];
 }
 
-// FindingTaskOption 是发现页「按任务」筛选下拉的一项:有漏洞的任务(描述为空表示任务已删除,
-// 前端回退展示 id)及其漏洞条数。
+// FindingTaskOption は検出事項ページの「タスク別」絞り込みの1項目。脆弱性があるタスク（説明が空ならタスクは削除済みで、
+// フロントは id を表示する）とその脆弱性件数。
 export interface FindingTaskOption {
   id: string | number;
-  name?: string; // 可选任务名称;空/缺省=未命名
+  name?: string; // 任意のタスク名。空または未指定は未命名
   description: string;
   count: number;
 }
 
-// FindingQuery 是发现列表分页/筛选/排序参数。
+// FindingQuery は検出事項一覧のページング、絞り込み、並び替えのパラメータである。
 export interface FindingQuery {
   page: number;
   pageSize: number;
   severity?: "all" | Severity;
   status?: "all" | FindingStatus;
   vulnclass?: string;
-  task?: string; // 任务 id;"all"/空 = 不按任务筛选
+  task?: string; // タスク id。"all" または空はタスクで絞らない
   query?: string;
   sort?: "severity" | "time";
-  // 资产树节点 key;选中一个节点 = 选中它的整棵子树。空 = 不按资产筛选。
+  // 資産ツリーのノード key。1ノードを選ぶとそのサブツリー全体を選ぶ。空は資産で絞らない。
   assetScope?: string;
 }
 
-// ---- Findings by asset (资产视图) ----
+// ---- Findings by asset (資産ビュー) ----
 export type FindingAssetKind = "company" | "root_domain" | "subdomain" | "ip" | "service" | "app" | "endpoint" | "none";
 
-// FindingAssetNode 是资产树的一个节点。key 形如 a:<id>(资产)、c:<id>(企业)、
-// r:<domain>(库里没有资产行的根域名)、__none__(未关联资产)。
+// FindingAssetNode は資産ツリーの1ノード。key は a:<id>（資産）、c:<id>（企業）、
+// r:<domain>（庫に資産行の無いルートドメイン）、__none__（未関連の資産）。
 export interface FindingAssetNode {
   key: string;
   parent?: string;
@@ -595,8 +595,8 @@ export interface FindingAssetNode {
   label: string;
   asset_id?: number;
   company_id?: number;
-  self: number; // 直接挂在该资产上的发现数
-  total: number; // 含子孙、按发现去重
+  self: number; // その資産に直接付いた検出事項の数
+  total: number; // 子孫を含み、検出事項で重複排除
   critical: number;
   high: number;
   medium: number;
@@ -611,7 +611,7 @@ export interface FindingAssetTree {
   dropped_kinds?: string[];
 }
 
-// FINDING_UNASSIGNED_ASSET 与后端 db.FindingUnassignedAsset 对应。
+// FINDING_UNASSIGNED_ASSET はバックエンドの db.FindingUnassignedAsset に対応する。
 export const FINDING_UNASSIGNED_ASSET = "__none__";
 
 // ---- Activity / sessions ----
@@ -629,12 +629,12 @@ export type ActivityKind =
   | "llm_failover" // task-level provider switch / chain exhaustion audit event
   | "intercept_request"; // user-approval request from the intercept layer
 
-// ChatAttachment 是一次上传的文件:path 相对该会话/任务工作目录(即 agent 的 CWD)。
+// ChatAttachment は1回のアップロードファイル。path はそのセッションまたはタスクの作業ディレクトリ（agent の CWD）からの相対パス。
 export interface ChatAttachment {
   name: string;
   path: string;
   size: number;
-  abs?: string; // 绝对路径(scope=staging 暂存上传时返回;建任务前把它写进描述)
+  abs?: string; // 絶対パス（scope=staging の一時アップロード時に返す。タスク作成前に説明へ書き込む）
 }
 
 export interface Activity {
@@ -691,24 +691,24 @@ export interface TaskLLMResolutions {
   worker: TaskLLMResolution;
 }
 
-// ---- Agent triggers (P3 调度，仅自定义 agent) ----
+// ---- Agent triggers（P3 のスケジューラ。カスタム agent だけ） ----
 export interface AgentTrigger {
   id: number;
   agent_key: string;
   enabled: boolean;
-  interval_sec: number; // 定时:每 N 秒(0=不定时)
-  on_finding: boolean; // 任意任务发现 finding 时触发
-  on_goal_met: boolean; // 任意任务达成目标时触发
-  on_task_timeout: boolean; // 任意任务超时时触发
-  on_tool_call: boolean; // 选中工具被调用(执行完成)时触发
-  on_task_create: boolean; // 任意任务被创建时触发
-  interval_message: string; // 各触发条件的独立用户消息
+  interval_sec: number; // 定期。N 秒ごと（0 は定期ではない）
+  on_finding: boolean; // 任意のタスクが finding を検出したときに発火
+  on_goal_met: boolean; // 任意のタスクが目標を達成したときに発火
+  on_task_timeout: boolean; // 任意のタスクがタイムアウトしたときに発火
+  on_tool_call: boolean; // 選択したツールが呼ばれた（実行完了）ときに発火
+  on_task_create: boolean; // 任意のタスクが作成されたときに発火
+  interval_message: string; // 各発火条件ごとの独立したユーザーメッセージ
   finding_message: string;
   goal_message: string;
   task_timeout_message: string;
   tool_call_message: string;
   task_create_message: string;
-  tool_names: string[]; // on_tool_call 选中的工具 key(至少一个)
+  tool_names: string[]; // on_tool_call で選んだツール key（1つ以上）
   last_fire?: string;
 }
 
@@ -794,7 +794,7 @@ export interface BatchControlItem {
   error?: string;
 }
 
-// 批量改分类的逐任务结果。失败只可能是任务已被删除，分类本身的写入是原子的。
+// 分類の一括変更のタスクごとの結果。失敗はタスクがすでに削除されている場合だけ。分類そのものの書き込みは原子的。
 export interface BatchCategoryItem {
   id: string;
   ok: boolean;
@@ -910,8 +910,8 @@ export interface TrafficHost {
 // ---- App settings (runtime toggles) ----
 export interface Settings {
   traffic_capture: boolean;
-  agent_traffic_binding: boolean; // Agent 自动绑定流量证据，默认关闭；不影响人工绑定
-  llm_record: boolean; // LLM 录制开关（默认关）；关闭时不记录任何 LLM 调用
+  agent_traffic_binding: boolean; // Agent がトラフィック証拠を自動で関連付ける。既定はオフ。手動の関連付けには影響しない
+  llm_record: boolean; // LLM 記録のスイッチ（既定はオフ）。オフのときは LLM 呼び出しを一切記録しない
   // Web search. brave_key_set / tavily_key_set reflect whether a key is stored
   // (the values are never returned). On PUT, send the corresponding field to set/clear.
   web_search_enabled: boolean;
@@ -921,49 +921,49 @@ export interface Settings {
   // write-only: only sent on PUT to store/clear the key.
   brave_search_api_key?: string;
   tavily_search_api_key?: string;
-  // 独立出口代理(http/https/socks5)，用于访问搜索端点；与记录流量的 MITM 代理无关。空=直连。
+  // 検索エンドポイントへ出る独立した出口プロキシ（http/https/socks5）。トラフィックを記録する MITM プロキシとは無関係。空は直接接続。
   web_search_proxy?: string;
-  // 全局出口代理(http/https/socks5，可带 user:pass)，所有目标流量走它。开启流量捕获时作为
-  // MITM 上游；关闭捕获时直接注入 agent 的 bash/WebFetch。空=直连。
+  // グローバル出口プロキシ（http/https/socks5。user:pass を付けられる）。対象のトラフィックはすべてここを通る。トラフィック取得がオンのときは
+  // MITM の上流になる。取得がオフのときは agent の bash/WebFetch へ直接注入する。空は直接接続。
   global_proxy?: string;
-  python_interpreter?: string; // 自定义脚本工具的 python 解释器路径(空=运行时检测)
-  workers?: number; // 并发工作 agent 数(默认3)；对之后启动的任务生效
-  // 任务并发上限:同时「运行中」的任务数上限。关闭=不限;开启后新建任务超限则排队,有空位自动启动。
-  task_concurrency_enabled?: boolean; // 默认 false
-  task_concurrency_limit?: number; // 开启后默认 5
-  // LLM 轮询(故障转移)。默认关；开启后「未指定模型」的 agent 在当前配置不可用
-  // （余额不足/key 失效/限流/服务异常）时自动切到下一个配置。
-  llm_pool_enabled?: boolean; // 默认 false
-  // 绑定了指定配置的 agent/任务失败时是否也回落到轮询链。默认 false = 绑定即独占。
+  python_interpreter?: string; // カスタムスクリプトツールの python インタプリタのパス（空は実行時に検出）
+  workers?: number; // 並行する作業 agent の数（既定 3）。以後起動するタスクに効く
+  // タスク同時実行の上限。同時に「実行中」になれるタスク数。オフは無制限。オンのあと、新規タスクが上限を超えると待ち、空きが出たら自動で起動する。
+  task_concurrency_enabled?: boolean; // 既定 false
+  task_concurrency_limit?: number; // オンにしたあとの既定は 5
+  // LLM のローテーション（フェイルオーバー）。既定はオフ。オンのあと、「モデル未指定」の agent は現在の設定が使えないとき
+  // （残高不足、key 失効、レート制限、サービス異常）次の設定へ自動で切り替える。
+  llm_pool_enabled?: boolean; // 既定 false
+  // 指定設定を関連付けた agent やタスクが失敗したときも、ローテーション鎖へ戻すか。既定 false は、関連付けたらそれを専有する。
   llm_pool_bind_fallback?: boolean;
-  // 操作约束注入范围(默认都开):把任务的 allow/deny 约束拼进对应 agent 的系统提示。
+  // 操作制約を注入する範囲（既定はすべてオン）。タスクの allow/deny 制約を、対応する agent のシステムプロンプトへつなぐ。
   constraints_inject_planner?: boolean;
   constraints_inject_worker?: boolean;
-  // 实验功能:noa 模型驱动上下文压缩(默认关)。开启后平台接入的四类 agent(planner/
-  // worker/主 agent/对话)由 noa 接管上下文压缩,取代内置 compaction;每 run 读一次,对
-  // 之后启动的 run 生效。
+  // 実験機能。noa のモデル駆動コンテキスト圧縮（既定はオフ）。オンにすると、プラットフォームに接続する4種の agent（planner、
+  // worker、メイン agent、対話）のコンテキスト圧縮を noa が引き取り、組み込み compaction を置き換える。run ごとに1回読み、
+  // 以後起動する run に効く。
   noa_compaction?: boolean;
-  // ---- 漏洞 IM 推送（渠道本身是独立资源，见 /api/notify/*，这里只有三项全局配置）----
-  notify_enabled?: boolean; // 推送总开关，默认开；用于维护期一键止血
-  notify_public_base_url?: string; // 漏洞详情回链的外部访问地址；空=消息不带回链
-  notify_digest_interval_min?: number; // 汇总模式周期（分钟），默认 30
+  // ---- 脆弱性の IM 通知（チャネル自体は独立したリソース。/api/notify/* を参照。ここにあるのはグローバル設定3つだけ）----
+  notify_enabled?: boolean; // 通知の全体スイッチ。既定はオン。保守中に一度で止めるためのもの
+  notify_public_base_url?: string; // 脆弱性詳細へ戻る外部 URL。空ならメッセージにリンクを付けない
+  notify_digest_interval_min?: number; // まとめモードの周期（分）。既定 30
 }
 
-// ---- 漏洞 IM 推送 ----
+// ---- 脆弱性の IM 通知 ----
 
-// NotificationFilter 是渠道的过滤条件，字段全部可选，缺省即不过滤。
-// 后端对所有字段都不加校验：配置畸形时按「命中」处理（宁可多推不可漏推）。
+// NotificationFilter はチャネルの絞り込み条件。フィールドはすべて任意で、未指定は絞らない。
+// バックエンドはどのフィールドも検証しない。設定が壊れているときは「一致」として扱う（漏れるより多く送る）。
 export interface NotificationFilter {
   min_severity?: string; // "" | low | medium | high | critical
-  task_ids?: number[]; // 空=不限；非空则要求与漏洞所属任务有交集
-  asset_ids?: number[]; // 空=不限；非空则要求与漏洞锚定资产有交集
-  vulnclass_include?: string[]; // 空=全收；非空则要求漏洞类型命中任一关键词（大小写不敏感子串）
-  vulnclass_exclude?: string[]; // 命中任一关键词即排除（排除优先于包含）
-  on_status_change?: boolean; // 是否也接收漏洞处置状态变更事件
+  task_ids?: number[]; // 空は制限なし。空でないときは、脆弱性の所属タスクと交わることを要求する
+  asset_ids?: number[]; // 空は制限なし。空でないときは、脆弱性がアンカーする資産と交わることを要求する
+  vulnclass_include?: string[]; // 空はすべて受け取る。空でないときは、脆弱性種別がいずれかのキーワードに当たることを要求する（大文字小文字を区別しない部分文字列）
+  vulnclass_exclude?: string[]; // いずれかのキーワードに当たれば除外する（除外は包含より優先）
+  on_status_change?: boolean; // 脆弱性の対応状態の変更イベントも受け取るか
 }
 
-// NotificationChannel 是一个渠道实例。config 的字段随 kind 而异，
-// 且凭据字段在读取时被替换成 "__masked__" 开头的掩码值——原样回传即表示「不改」。
+// NotificationChannel はチャネルの1インスタンス。config のフィールドは kind によって違う。
+// 資格情報フィールドは読み出し時に "__masked__" で始まるマスク値へ置き換わる。そのまま送り返すと「変更しない」という意味になる。
 export interface NotificationChannel {
   id: number;
   name: string;
@@ -975,12 +975,12 @@ export interface NotificationChannel {
   rate_per_min: number;
   created_at: string;
   updated_at: string;
-  // secret_keys 由后端按渠道类型给出，前端据此渲染密码框与「留空即不改」提示，
-  // 不硬编码任何渠道知识。
+  // secret_keys はバックエンドがチャネル種別ごとに返す。フロントはこれでパスワード欄と「空のままなら変更しない」を描画し、
+  // チャネルの知識をハードコードしない。
   secret_keys: string[];
 }
 
-// NotificationKind 是 /api/notify/meta 返回的渠道类型元数据。
+// NotificationKind は /api/notify/meta が返すチャネル種別のメタデータである。
 export interface NotificationKind {
   kind: string;
   default_rate_per_min: number;
@@ -1003,7 +1003,7 @@ export interface NotificationMeta {
   };
 }
 
-// NotificationDelivery 是一条投递记录，用于投递历史与失败重发。
+// NotificationDelivery は配信記録の1件。配信履歴と失敗の再送に使う。
 export interface NotificationDelivery {
   id: number;
   finding_id: string;
@@ -1034,67 +1034,67 @@ export interface LLMProfile {
   rate_per_second: number;
   rate_per_minute: number;
   context_window_k?: number;
-  // 思考开关(thinking.type): ""=不发送(默认) | "disabled"=关闭 | "enabled"=开启
+  // 思考スイッチ（thinking.type）。"" は送らない（既定） | "disabled" はオフ | "enabled" はオン
   thinking_type?: string;
-  // 思考强度: ""=不发送(默认) | "low"/"medium"/"high"/"xhigh"/"max"
+  // 思考の強さ。"" は送らない（既定） | "low" / "medium" / "high" / "xhigh" / "max"
   reasoning_effort?: string;
   is_default: boolean;
-  // 轮询顺位：越大越先被选中。激活配置恒为链首，与本值无关。
+  // ローテーションの順位。大きいほど先に選ばれる。有効な設定は常に鎖の先頭で、この値とは無関係。
   priority?: number;
-  // true = 不作为故障转移目标（仍可被 agent/任务显式绑定使用）。
+  // true はフェイルオーバー先にしない（agent やタスクが明示的に関連付けて使うことはできる）。
   pool_exclude?: boolean;
-  // true（默认）= 流式(SSE) | false = 真·非流式(stream:false，一次性返回)。
+  // true（既定）はストリーミング（SSE）。false は本当の非ストリーミング（stream:false、一度に返す）。
   streaming?: boolean;
-  // 单次回复的输出上限(token)。0 = 不发送该字段，由服务端默认值决定。
-  // 注意与 context_window_k 区分：后者是模型总容量，只在本地用于压缩阈值。
+  // 1回の応答の出力上限（token）。0 はそのフィールドを送らず、サーバーの既定値に任せる。
+  // context_window_k とは分ける。あちらはモデルの総容量で、ローカルの圧縮しきい値にだけ使う。
   max_tokens?: number;
-  // 上限用哪个请求字段名，仅 format="openai" 有意义：
-  // ""=max_tokens(默认) | "max_completion_tokens"(OpenAI 推理模型只认它)
+  // 上限に使うリクエストフィールド名。format="openai" のときだけ意味がある。
+  // "" は max_tokens（既定） | "max_completion_tokens"（OpenAI の推論モデルはこれだけを認める）
   max_tokens_field?: string;
-  // 自定义会话头名：非空时每次请求带该 HTTP 头，头值=当前会话/意图的 session id。
-  // ""=不发送。用于按 session-id 头做提示缓存/粘性路由的网关。
+  // カスタムのセッションヘッダ名。空でないときは毎回のリクエストにその HTTP ヘッダを付ける。値は現在のセッションまたはインテントの session id。
+  // "" は送らない。session-id ヘッダでプロンプトキャッシュやスティッキーなルーティングをするゲートウェイ向け。
   session_header_key?: string;
-  // 本配置对重试的覆盖（建连/空响应/同 provider 安全窗口）。留空/全 0 = 跟随全局策略。
+  // この設定による再試行の上書き（接続確立、空レスポンス、同じ provider の安全窓）。空、またはすべて 0 はグローバル方針に従う。
   retry?: LLMRetryOverride;
 }
 
-// ---- LLM 重试策略 ----
-// 一层重试的两个旋钮。两者都是「0 = 未配置」：
-//   attempts    0=用默认次数 | -1=关闭该层重试 | >0=重试次数
-//   interval_ms 0=用默认的指数退避 | >0=改用这个固定毫秒间隔
+// ---- LLM 再試行方針 ----
+// 1層の再試行の2つのつまみ。どちらも「0 = 未設定」。
+//   attempts    0 は既定回数 | -1 はその層の再試行をオフ | >0 は再試行回数
+//   interval_ms 0 は既定の指数バックオフ | >0 はこの固定ミリ秒間隔に変える
 export interface LLMRetryRule {
   attempts: number;
   interval_ms: number;
 }
 
-// 单个 LLM 配置能覆盖的三层（都是「跟着端点走」的重试）。
+// 1つの LLM 設定が上書きできる3層（どれも「エンドポイントに付いていく」再試行）。
 export interface LLMRetryOverride {
-  connect: LLMRetryRule; // 建连重试：连接重置/超时/429/5xx，流开始前
-  empty: LLMRetryRule; // 空响应重试：完成但没有任何内容（仅 openai 格式）
-  stream: LLMRetryRule; // 同 provider 安全窗口重试：未交付输出前的断流重放
+  connect: LLMRetryRule; // 接続確立の再試行。接続リセット、タイムアウト、429、5xx。ストリーム開始前
+  empty: LLMRetryRule; // 空レスポンスの再試行。完了したが内容が無い（openai 形式だけ）
+  stream: LLMRetryRule; // 同じ provider の安全窓での再試行。出力を渡す前の切断を再送する
 }
 
-// 全局策略 = 上面三层的默认值 + 两层只有全局的：
-//   breaker 轮询熔断（attempts=连续几次瞬时失败熔断，interval_ms=固定冷却时长）
-//   intent  意图重跑（worker 以 model_error 收场后整条意图重跑）
+// グローバル方針は、上の3層の既定値に、グローバルにしか無い2層を足したもの。
+//   breaker ローテーションのサーキットブレーカ（attempts は連続した即時失敗が何回で遮断するか、interval_ms は固定の冷却時間）
+//   intent  インテントの再実行（worker が model_error で終わったあと、そのインテント全体を再実行する）
 export interface LLMRetryPolicy extends LLMRetryOverride {
   breaker: LLMRetryRule;
   intent: LLMRetryRule;
 }
 
-// ---- LLM 轮询（故障转移）----
-// 一个配置在轮询链中的位置与健康状态。state:
+// ---- LLM ローテーション（フェイルオーバー）----
+// ある設定の、ローテーション鎖での位置と健全性。state は次のとおり。
 //   ok       正常
-//   degraded 有连续失败但未达熔断阈值
-//   tripped  已熔断，冷却期内被跳过（cooldown_secs 为剩余秒数）
+//   degraded 連続失敗はあるが、遮断の閾値には達していない
+//   tripped  遮断済み。冷却中は飛ばす（cooldown_secs は残り秒）
 export interface LLMPoolMember {
   profile_id: string;
   name: string;
   model: string;
   format: string;
   priority: number;
-  active: boolean; // 是否为当前激活配置（恒为链首）
-  excluded: boolean; // pool_exclude：不参与轮询
+  active: boolean; // 現在有効な設定か（常に鎖の先頭）
+  excluded: boolean; // pool_exclude。ローテーションに参加しない
   state: "ok" | "degraded" | "tripped";
   fails: number;
   trips: number;
@@ -1112,22 +1112,22 @@ export interface LLMPoolStatus {
 // ---- Agents ----
 export interface Agent {
   id: string;
-  key: string; // 内置为 goals/planner/mainagent/worker；自定义为用户自定 key
+  key: string; // 組み込みは goals/planner/mainagent/worker。カスタムはユーザーが決めた key
   name: string;
   description?: string;
   role: string;
   builtin: boolean;
   enabled: boolean;
-  llm_profile_id?: number | null; // 绑定的 LLM 配置；null/absent = 跟随任务/会话/全局
-  max_turns?: number; // 0 = 无限制
-  run_seconds?: number; // worker 单次运行墙钟上限(秒)；0 = 无限制
-  web_search?: boolean; // 是否启用网络搜索(受系统全局开关门控)
-  interactive_shell?: boolean; // 是否启用交互式 shell(持久 PTY 会话工具族)
-  // P3 触发后处理策略(仅自定义 agent 有意义)
-  trigger_run_mode?: "serial" | "parallel"; // 串行排队 / 每次触发各自并发一个会话
-  trigger_merge_mode?: "by_task" | "all" | "none"; // 仅 serial：同任务合并 / 全部合并 / 不合并
-  trigger_max_parallel?: number; // 仅 parallel：每 agent 并发上限；0=不限
-  // 绑定数量(仅列表接口返回)：可见 MCP / 可见 Skill / 绑定工具
+  llm_profile_id?: number | null; // 関連付けた LLM 設定。null または absent はタスク、セッション、グローバルに従う
+  max_turns?: number; // 0 = 無制限
+  run_seconds?: number; // worker の1回の実行の壁時計上限（秒）。0 は無制限
+  web_search?: boolean; // ネットワーク検索を有効にするか（システムの全体スイッチに従う）
+  interactive_shell?: boolean; // 対話式 shell を有効にするか（永続 PTY セッションのツール群）
+  // P3 の発火後の処理方針（カスタム agent だけに意味がある）
+  trigger_run_mode?: "serial" | "parallel"; // 直列で待つ / 発火のたびに別セッションを並行する
+  trigger_merge_mode?: "by_task" | "all" | "none"; // serial だけ。同じタスクをまとめる / 全部まとめる / まとめない
+  trigger_max_parallel?: number; // parallel だけ。agent ごとの並行上限。0 は無制限
+  // 関連付け数（一覧 API だけが返す）。見える MCP / 見える Skill / 関連付けたツール
   mcp_count?: number;
   skill_count?: number;
   tool_count?: number;
@@ -1153,13 +1153,13 @@ export interface AgentDetail {
   variables: PromptVar[];
   versions: PromptVersion[];
   visibility: { mcp: number[]; skill: string[] };
-  // 可绑定的 LLM 配置候选(供「默认模型」下拉)；当前绑定见 agent.llm_profile_id
+  // 関連付けできる LLM 設定の候補（「既定モデル」のプルダウン用）。現在の関連付けは agent.llm_profile_id
   llm_profiles?: { id: number; name: string; model: string; is_default: boolean }[];
-  wrapup_prompt?: string; // 已保存的收尾提示词(空=用内置默认)
-  wrapup_default?: string; // 内置默认收尾提示词(占位/恢复默认)
-  wrapup_max_turns?: number; // 已保存的收尾轮数(0=用内置默认)
-  wrapup_max_turns_default?: number; // 内置默认收尾轮数(供 "0=默认N" 提示)
-  // 任务级超时收尾词(仅 worker/planner，task_timeout_wrapup_supported=true 时才显示该分区)
+  wrapup_prompt?: string; // 保存済みの締めプロンプト（空は組み込み既定）
+  wrapup_default?: string; // 組み込み既定の締めプロンプト（プレースホルダと既定への復帰）
+  wrapup_max_turns?: number; // 保存済みの締めターン数（0 は組み込み既定）
+  wrapup_max_turns_default?: number; // 組み込み既定の締めターン数（"0=既定N" の表示用）
+  // タスク単位のタイムアウト締め文言（worker と planner だけ。task_timeout_wrapup_supported=true のときだけその区画を出す）
   task_timeout_wrapup_supported?: boolean;
   task_timeout_wrapup_prompt?: string;
   task_timeout_wrapup_default?: string;
@@ -1196,23 +1196,23 @@ export interface SkillItem {
   compatibility?: string; // optional: environment requirements
   mcps?: string[]; // MCP server names this skill unlocks on load
   files: string[]; // files in the skill directory
-  // 调用统计（skill_usage 账本）。从未被调用过的 skill：calls=0、last_used 缺省。
+  // 呼び出し統計（skill_usage 台帳）。一度も呼ばれていない skill は calls=0、last_used は未指定。
   calls: number;
-  tasks: number; // 加载过它的任务数（chat 会话不计入）
-  usage_agents: string[]; // 加载过它的 agent key
+  tasks: number; // それを読み込んだタスク数（chat セッションは数えない）
+  usage_agents: string[]; // それを読み込んだ agent key
   last_used?: string;
 }
 
-// SkillCall 是一次 Skill() 调用（单个 skill 的最近调用列表）。
+// SkillCall は Skill() の1回の呼び出し（1つの skill の最近の呼び出し一覧）。
 export interface SkillCall {
   ts: string;
   agent_key: string;
-  task_id: number; // 0 = 非任务场景（对话会话）
+  task_id: number; // 0 はタスク以外（対話セッション）
   session_id: string;
   args_len: number;
 }
 
-// MissingSkill 是被点名但不存在的 skill —— "想用但没有"的缺口。
+// MissingSkill は名前を指定されたが存在しない skill。「使いたいが無い」不足。
 export interface MissingSkill {
   skill: string;
   calls: number;
@@ -1220,7 +1220,7 @@ export interface MissingSkill {
   last_used?: string;
 }
 
-// ---- Tools (内置工具目录) ----
+// ---- Tools（組み込みツール一覧） ----
 // key + handler live in Go; only these fields are page-editable. system tools lock
 // the key and the parameter *structure* (name/type/required) — the per-param
 // description/default and the agent binding are what move.
@@ -1232,10 +1232,10 @@ export interface Tool {
   schema: Record<string, any>; // full JSON-Schema (object with properties)
   agents: string[]; // bound agent keys
   enabled: boolean;
-  kind?: "builtin" | "shell" | "command" | "script" | "http"; // 自定义工具类型
+  kind?: "builtin" | "shell" | "command" | "script" | "http"; // カスタムツールの種別
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  exec?: Record<string, any>; // 自定义工具执行规格(kind!=builtin)
-  deferred?: boolean; // schema 延迟(SearchExtraTools/ExecuteExtraTool)
+  exec?: Record<string, any>; // カスタムツールの実行仕様（kind!=builtin）
+  deferred?: boolean; // schema を遅延する（SearchExtraTools/ExecuteExtraTool）
   calls?: number; // persistent runtime invocation count (older APIs may omit it)
 }
 
@@ -1271,7 +1271,7 @@ export interface InterceptRule {
   updated_at: string;
 }
 
-// ---- Asset Intercept Rules（资产拦截：全局黑名单） ----
+// ---- Asset Intercept Rules（資産インターセプト: グローバルな拒否リスト） ----
 export type AssetInterceptKind =
   | "exact_domain"
   | "exact_ip"
@@ -1281,10 +1281,10 @@ export type AssetInterceptKind =
   | "fuzzy_url"
   | "cidr";
 
-// action 仅用于任务级规则：block=拦截(禁止测试) allow=允许(白名单)。
+// action はタスク単位のルールだけに使う。block はインターセプト（テスト禁止）、allow は許可（許可リスト）。
 export type AssetInterceptAction = "block" | "allow";
 
-// 任务级资产拦截/允许规则的录入项（创建任务、任务详情编辑使用）。
+// タスク単位の資産インターセプト/許可ルールの入力項目（タスク作成とタスク詳細の編集で使う）。
 export interface AssetInterceptRuleInput {
   action: AssetInterceptAction;
   kind: AssetInterceptKind;
@@ -1296,7 +1296,7 @@ export interface AssetInterceptRuleInput {
 export interface AssetInterceptRule {
   id: number;
   enabled: boolean;
-  action?: AssetInterceptAction; // 全局规则不带此字段（恒为拦截）；任务级规则区分 block/allow
+  action?: AssetInterceptAction; // グローバルルールにはこのフィールドが無い（常にインターセプト）。タスク単位のルールは block と allow を分ける
   kind: AssetInterceptKind;
   pattern: string;
   note: string;
@@ -1316,23 +1316,23 @@ export interface InterceptPending {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   tool_input: Record<string, any>;
   status: "pending" | "allowed" | "denied" | "timeout";
-  reason: string; // 规则 message 或模型判定理由(模型判定带 [模型] 前缀)
+  reason: string; // ルールの message、またはモデル判定の理由（モデル判定は [モデル] 接頭辞付き）
   decided_at?: string;
   created_at: string;
 }
 
-// JudgeConfig: 模型兜底审批(仅当没有任何拦截规则命中时由模型判断)的全局配置。
+// JudgeConfig。モデルによる最終承認（どのインターセプトルールにも当たらないときだけモデルが判断する）のグローバル設定。
 export interface JudgeConfig {
   enabled: boolean;
-  profile_id: number; // 0 = 跟随激活/默认配置
-  prompt: string; // 判定提示词;GET 未设置时后端回填内置模板全文
-  timeout_seconds: number; // 模型调用超时
-  fail_action: "allow" | "ask" | "deny"; // 模型出错/超时/不可解析时的回退
-  ask_timeout_seconds: number; // 模型判 ask 转人工后的审批等待超时
-  ask_timeout_action: "allow" | "deny"; // 审批超时后的默认动作
+  profile_id: number; // 0 は有効な設定、または既定の設定に従う
+  prompt: string; // 判定プロンプト。GET で未設定のとき、バックエンドが組み込みテンプレート全文を戻す
+  timeout_seconds: number; // モデル呼び出しのタイムアウト
+  fail_action: "allow" | "ask" | "deny"; // モデルのエラー、タイムアウト、解析不能のときの戻り先
+  ask_timeout_seconds: number; // モデルが ask と判定して人に回したあとの、承認待ちタイムアウト
+  ask_timeout_action: "allow" | "deny"; // 承認がタイムアウトしたあとの既定動作
 }
 
-// JudgeUsage: 模型兜底审批(judge 通道)的累计 token 用量 + 近 N 天每日序列。
+// JudgeUsage。モデルによる最終承認（judge 経路）の累計 token 使用量と、直近 N 日の日次系列。
 export interface JudgeDayUsage {
   date: string; // YYYY-MM-DD (UTC)
   calls: number;
@@ -1360,7 +1360,7 @@ export interface InterceptApprovalRow extends InterceptPending {
   rule_name: string; // "" if rule was deleted
 }
 
-// ── 资产同步 (ScopeSentry 数据源) ──────────────────────────────────────────────
+// ── 資産同期 (ScopeSentry データソース) ──────────────────────────────────────────────
 export interface SSProject {
   id: string; // MongoDB ObjectID — used as filter.project
   name: string;
@@ -1401,7 +1401,7 @@ export interface CommandRecord {
   created_at: string;
 }
 
-// 单个工具的调用统计（/commands/stats）；errors 为其中失败的次数。
+// ツール1つの呼び出し統計（/commands/stats）。errors はそのうち失敗した回数。
 export interface ToolStat {
   tool: string;
   total: number;
@@ -1429,9 +1429,9 @@ export interface LLMRecordItem {
 export interface LLMRecordDetail extends LLMRecordItem {
   request_body: string;
   response_body: string;
-  // provider 实际收发的 HTTP 原文：请求为 buildBody() 发出的完整 body（含工具
-  // schema），响应为原始 SSE 帧。上面的 request_body/response_body 是归一化视图，
-  // 丢弃了工具 schema 与 tool_use 块。旧记录为空。
+  // provider が実際に送受信した HTTP 原文。リクエストは buildBody() が送った完全な body（ツール
+  // schema を含む）。レスポンスは生の SSE フレーム。上の request_body/response_body は正規化ビューで、
+  // ツール schema と tool_use ブロックを捨てている。古い記録は空。
   raw_request?: string;
   raw_response?: string;
 }
@@ -1561,41 +1561,41 @@ export interface FindingTrafficDetail {
   response: EvidenceBodyPreview;
 }
 
-/** GET /api/update/check —— 当前版本与 GitHub 最新正式版的比较结果。 */
+/** GET /api/update/check。現在のバージョンと GitHub の最新正式版との比較結果。 */
 export interface UpdateCheck {
-  /** 当前运行的版本；开发构建为 "dev" 或 git describe 的带后缀形式。 */
+  /** いま動いているバージョン。開発ビルドは "dev"、または git describe の接尾辞付き。 */
   current: string;
-  /** 运行形态。docker 下换装只作用于容器可写层，重建容器会退回镜像版本。 */
+  /** 実行形態。docker では入れ替えはコンテナの書き込み層だけに効き、コンテナを作り直すとイメージのバージョンに戻る。 */
   mode: "docker" | "binary";
   os: string;
   arch: string;
   repo: string;
-  /** 是否存在可回滚的上一版本（artex.old）。 */
+  /** ロールバックできる前のバージョン（artex.old）があるか。 */
   has_backup: boolean;
-  /** 本次启动时自更新自举的结论（换装失败 / 已回滚等），无事发生时为空。 */
+  /** 今回の起動時の自己アップデートの結論（入れ替え失敗、ロールバック済みなど）。何も無ければ空。 */
   boot_notice?: string;
   rolled_back?: boolean;
-  /** 查询 GitHub 失败时给出原因，此时下面的字段都不会有。 */
+  /** GitHub の照会に失敗したときの理由。このときは下のフィールドは無い。 */
   error?: string;
   latest?: string;
   notes?: string;
   html_url?: string;
   published_at?: string;
-  /** 当前平台对应的发布包名，以及该 Release 是否真的带了它。 */
+  /** 現在のプラットフォームに対応するリリースパッケージ名と、その Release が本当にそれを含むか。 */
   asset?: string;
   asset_available?: boolean;
   size?: number;
   has_update?: boolean;
-  /** 双方版本号是否可比较；开发构建为 false，此时禁用一键更新。 */
+  /** 両方のバージョン番号を比較できるか。開発ビルドは false で、このときはワンクリック更新を無効にする。 */
   comparable?: boolean;
-  /** comparable 为 false 时的说明。 */
+  /** comparable が false のときの説明。 */
   reason?: string;
 }
 
-/** /api/update/stream 推送的一条更新进度。 */
+/** /api/update/stream が送る更新進捗の1件。 */
 export interface UpdateProgress {
   phase: "idle" | "downloading" | "verifying" | "extracting" | "staged" | "failed";
-  /** 仅下载阶段有意义（0-100）；其余阶段为 -1。 */
+  /** ダウンロード段階だけ意味がある（0-100）。それ以外の段階は -1。 */
   percent: number;
   message: string;
   version?: string;

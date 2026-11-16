@@ -337,8 +337,8 @@ type RecordedFinding struct {
 	Traffic   *FindingTraffic `json:"traffic"`
 }
 
-// ctx 由调用方传入本次事务所用的上下文（而非在内部取 context.Background）：
-// 事务内新加的推送事件写入同样应受调用方的取消与超时约束。
+// ctx は呼び出し側が、このトランザクションに使うコンテキストを渡す（内部で context.Background は取らない）。
+// トランザクション内で足す配信イベントの書き込みも、呼び出し側のキャンセルとタイムアウトに従う。
 func RecordFindingTx(ctx context.Context, tx *sql.Tx, in RecordFindingInput, prepared []PreparedTrafficEvidence) (*RecordedFinding, error) {
 	if err := LockTaskEvidenceTx(tx, in.TaskID); err != nil {
 		return nil, err
@@ -358,7 +358,7 @@ func RecordFindingTx(ctx context.Context, tx *sql.Tx, in RecordFindingInput, pre
 			return nil, err
 		}
 		if !ok {
-			return nil, errors.New("intent_id 必须是本任务的意图（关联任务意图只读）")
+			return nil, errors.New("intent_id はこのタスクのインテントである必要があります（関連タスクのインテントは読み取り専用です）")
 		}
 	}
 	payload, _ := json.Marshal(map[string]any{"vulnclass": in.VulnClass, "name": in.Name, "severity": in.Severity, "summary": in.Summary, "evidence": map[string]any{"by": in.Worker, "poc": in.Evidence}})
@@ -386,9 +386,9 @@ VALUES($1,'finding',$2,9,'confirmed',$3) RETURNING id`, in.ExplorationID, string
 VALUES(NULLIF($1,0),$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`, in.TaskID, out.NodeID, in.VulnClass, in.Name, in.Severity, in.Summary, in.Evidence, in.Worker, string(raw)).Scan(&out.FindingID); err != nil {
 		return nil, err
 	}
-	// 在**同一事务**里登记一条推送事件：提交即保证「漏洞落库」与「推送任务存在」
-	// 原子一致，不存在提交成功却没入队、消息永久丢失的窗口。
-	// 这里的失败被隔离在保存点上、不影响漏洞写入（见函数注释），因此忽略返回值。
+	// 同じトランザクションで配信イベントを 1 件登録する。コミットすれば「脆弱性の保存」と「配信タスクの存在」が
+	// 原子的に揃い、コミットは成功したのにキューへ入らず、メッセージが永久に失われる窓は無い。
+	// ここの失敗はセーブポイントで隔離され、脆弱性の書き込みには影響しない（関数コメントを参照）。そのため戻り値は無視する。
 	RecordNotificationEventTx(ctx, tx, notify.EventFindingCreated, out.FindingID, notify.Snapshot{
 		Kind:      notify.EventFindingCreated,
 		FindingID: out.FindingID,

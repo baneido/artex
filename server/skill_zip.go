@@ -14,18 +14,18 @@ import (
 	"golang.org/x/text/encoding/simplifiedchinese"
 )
 
-// Go 的 archive/zip 只内置 Store(0) 和 Deflate(8) 两种解压器，遇到别的方法会返回
-// "zip: unsupported compression algorithm"。压缩软件在非默认档位下经常写出别的方法
-// (7-Zip 的 bzip2、WinZip 的 zstd)，所以这里把纯 Go 能解的两种补上；真的解不了的
-// (Deflate64 / LZMA / XZ / PPMd / 加密包) 在解压前就报出中文提示，而不是把底层
-// 错误原样甩给用户。
+// Go の archive/zip が組み込みで展開できるのは Store(0) と Deflate(8) だけである。ほかの方式では
+// "zip: unsupported compression algorithm" を返す。圧縮ソフトはデフォルト以外の設定で別の方式を書くことが多く
+// （7-Zip の bzip2、WinZip の zstd）、純 Go で展開できる 2 方式をここへ足す。本当に展開できないもの
+// （Deflate64、LZMA、XZ、PPMd、暗号化されたアーカイブ）は、展開の前に日本語で案内する。下位の
+// エラーをそのままユーザーへ返さない。
 const (
 	zipMethodStore     = 0
 	zipMethodDeflate   = 8
 	zipMethodDeflate64 = 9
 	zipMethodBzip2     = 12
 	zipMethodLZMA      = 14
-	zipMethodZstdPKW   = 20 // PKWARE 早期给 zstd 分配的编号
+	zipMethodZstdPKW   = 20 // PKWARE が初期に zstd へ割り当てた番号
 	zipMethodZstd      = 93
 	zipMethodXZ        = 95
 	zipMethodJPEG      = 96
@@ -46,14 +46,14 @@ var zipMethodNames = map[uint16]string{
 	zipMethodJPEG:      "JPEG",
 	zipMethodWavPack:   "WavPack",
 	zipMethodPPMd:      "PPMd",
-	zipMethodAES:       "AES 加密",
+	zipMethodAES:       "AES 暗号化",
 }
 
 func zipMethodName(m uint16) string {
 	if n, ok := zipMethodNames[m]; ok {
 		return n
 	}
-	return "未知"
+	return "不明"
 }
 
 // newSkillZipReader parses an uploaded archive and registers the extra decompressors
@@ -90,16 +90,16 @@ func skillZipEntries(zr *zip.Reader) []skillZipEntry {
 		name := zipEntryName(f)
 		if strings.HasPrefix(name, "__MACOSX/") || strings.Contains(name, "/__MACOSX/") ||
 			path.Base(name) == ".DS_Store" {
-			continue // macOS 打包残留
+			continue // macOS のアーカイブに混ざる不要ファイル
 		}
 		out = append(out, skillZipEntry{f: f, name: name})
 	}
 	return out
 }
 
-// zipEntryName returns the entry path as UTF-8. Windows 上的 7-Zip / WinRAR / 资源管理器
-// 在不置 UTF-8 标志位时会把中文文件名按 GBK 写进 zip，Go 原样保留这些字节，于是名字
-// 既不是合法 UTF-8 也过不了路径校验 —— 这里按 GBK 兜底解码。
+// zipEntryName returns the entry path as UTF-8. Windows の 7-Zip、WinRAR、エクスプローラーは
+// UTF-8 フラグを立てないとき、中国語のファイル名を GBK で zip に書く。Go はそのバイトをそのまま残すので、名前は
+// 正しい UTF-8 でもなく、パス検証も通らない。ここでは GBK で予備のデコードをする。
 func zipEntryName(f *zip.File) string {
 	if utf8.ValidString(f.Name) {
 		return f.Name

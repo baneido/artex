@@ -39,8 +39,8 @@ const POLL_MS = 8000;
 
 type KindMeta = { label: string; icon: LucideIcon; dot: string; chip: string };
 
-// 播报板自己的展示元数据。刻意不复用探索链路图那份:图是拓扑视角(节点卡片、连线配色),
-// 播报是流水视角(时间轴行),两边的信息密度和配色需求不同,各自演进更省事。
+// ブロードキャストボード自身の表示メタデータ。探索経路図のものは意図的に流用しない。図はトポロジの視点（ノードカード、線の配色）、
+// 投稿は時系列の視点（タイムラインの行）で、情報の密度と配色の要り方が違う。別々に進めた方が手間が少ない。
 const KIND_META: Record<string, KindMeta> = {
   begin: {
     label: "起点",
@@ -92,7 +92,7 @@ const KIND_META: Record<string, KindMeta> = {
   },
 };
 
-// 可筛选的类型。起点(fact/state=origin)不单独列,它跟着「事实」一起过滤。
+// 絞れる種別。起点（fact/state=origin）は単独では出さない。「事実」と一緒に絞る。
 const FILTER_KINDS: ExploreKind[] = ["goal", "intent", "fact", "finding", "hint", "digest"];
 
 const REL_LABEL: Record<string, string> = {
@@ -103,8 +103,8 @@ const REL_LABEL: Record<string, string> = {
   covers: "圧縮",
 };
 
-// goal / intent 的状态语义由全局 status 表提供(StatusBadge);其余类型的状态只在
-// 图和播报里出现,这里补一份。
+// goal と intent の状態の意味はグローバルな status 表が出す（StatusBadge）。ほかの種別の状態は
+// 図と投稿にしか出ないので、ここで1つ補う。
 const STATE_META: Record<string, Record<string, { label: string; tone: Tone }>> = {
   fact: {
     origin: { label: "起点", tone: "slate" },
@@ -125,7 +125,7 @@ const STATE_META: Record<string, Record<string, { label: string; tone: Tone }>> 
   },
 };
 
-// 任务根是 state=origin 的 fact,播报里读作「起点」。
+// タスクの根は state=origin の fact で、投稿では「起点」と読む。
 function viewKind(n: TaskNode): string {
   return n.type === "fact" && n.state === "origin" ? "begin" : n.type;
 }
@@ -152,7 +152,7 @@ function summaryOf(n: TaskNode): string {
         if (typeof v === "string" && v.trim()) return v;
       }
     } catch {
-      return raw; // 非 JSON payload:原样播报
+      return raw; // JSON でない payload はそのまま配信する
     }
   }
   return raw;
@@ -209,8 +209,8 @@ function KindChip({ kind }: { kind: string }) {
   );
 }
 
-// 节点锚定的资产:类型标签 + 可辨识文本。数据随播报页一起下发(node id → 资产),
-// 展开时直接展示,不额外请求。
+// ノードがアンカーする資産。種別ラベルと見分けられるテキスト。データは投稿ページと一緒に届く（node id から資産）。
+// 展開時にそのまま出し、追加リクエストはしない。
 function AssetList({ assets, dense = false }: { assets: FindingAsset[]; dense?: boolean }) {
   if (assets.length === 0) return null;
   return (
@@ -218,7 +218,7 @@ function AssetList({ assets, dense = false }: { assets: FindingAsset[]; dense?: 
       <div className="mb-1.5 text-xs font-medium text-muted-foreground">関係する資産 · {assets.length}</div>
       <ul className="flex flex-wrap gap-1.5">
         {assets.map((a) => {
-          // 运行时 a.type 可能是标签表未覆盖的类型,退回原始字符串。转一层类型让回退不被判成多余。
+          // 実行時の a.type はラベル表が覆っていない種別かもしれない。そのときは元の文字列へ戻す。型を一段かまして、戻りが余分だと判定されないようにする。
           const typeLabel =
             (taskAssetTypeLabel as (t: NewAssetType) => string | undefined)(a.type as NewAssetType) || a.type;
           return (
@@ -240,8 +240,8 @@ function AssetList({ assets, dense = false }: { assets: FindingAsset[]; dense?: 
   );
 }
 
-// 悬停在上下游条目上时弹出的节点名片:类型/状态/来源/时间 + 摘要 + payload 片段 + 涉及资产。
-// 数据来自本页已经拿到的 refs,不额外发请求——播报接口已经把邻居节点整份带回来了。
+// 上流と下流の項目にホバーしたときに出るノードの名刺。種別、状態、出所、時刻、要約、payload の断片、関係する資産。
+// データはこのページがすでに持っている refs から取る。追加リクエストはしない。投稿 API が隣接ノードを一式で返している。
 function RelatedNodeCard({ node, assets }: { node: TaskNode; assets: FindingAsset[] }) {
   const kind = viewKind(node);
   const meta = KIND_META[kind] ?? KIND_META.fact;
@@ -271,7 +271,7 @@ function RelatedNodeCard({ node, assets }: { node: TaskNode; assets: FindingAsse
   );
 }
 
-// 一条播报涉及的上下游:上游 = 指向本节点的边,下游 = 本节点指出去的边。
+// 1件の配信に関わる上流と下流。上流はこのノードを指す辺、下流はこのノードから出る辺。
 function RelatedList({
   title,
   rows,
@@ -347,13 +347,13 @@ function BroadcastRow({
 
   return (
     <div className={cn("relative grid grid-cols-[4.5rem_1.75rem_1fr] gap-x-2", fresh && "bg-primary/5")}>
-      {/* 时间列 */}
+      {/* 時刻の列 */}
       <div className="py-3 text-right text-xs text-muted-foreground tabular-nums">
         <div>{Number.isNaN(ts) ? "--:--:--" : clockFmt.format(ts)}</div>
         <div className="text-[11px] opacity-70">{relTime(ts, now)}</div>
       </div>
 
-      {/* 时间轴:竖线 + 类型圆点 */}
+      {/* タイムライン。縦線と種別の丸 */}
       <div className="relative flex justify-center">
         <span className="absolute inset-y-0 w-px bg-border" />
         <span
@@ -453,8 +453,8 @@ export function BroadcastTab({ taskId }: { taskId: string }) {
   const seenRef = React.useRef<Set<string>>(new Set());
   const baselineRef = React.useRef<number | null>(null);
   const streamRef = React.useRef("");
-  // 只有「最新在前的第 1 页」才是真正的直播位；其余位置轮询只更新未读计数，
-  // 不动列表，免得翻页/展开时内容在脚下变。
+  // 「新しいものが前の1ページ目」だけが本当のライブ位置である。ほかの位置のポーリングは未読件数だけを更新し、
+  // 一覧は動かさない。ページ送りや展開のときに、足元で内容が変わらないようにする。
   const atLive = page === 1 && order === "desc";
 
   React.useEffect(() => {
@@ -463,7 +463,7 @@ export function BroadcastTab({ taskId }: { taskId: string }) {
     return () => clearInterval(t);
   }, []);
 
-  // 输入防抖:打字停 300ms 才真正查询,并回到第一页。
+  // 入力のデバウンス。打つのが 300ms 止まったら本当に検索し、1ページ目へ戻る。
   React.useEffect(() => {
     const t = setTimeout(() => {
       setQuery(queryInput);
@@ -474,9 +474,9 @@ export function BroadcastTab({ taskId }: { taskId: string }) {
 
   React.useEffect(() => {
     let alive = true;
-    let rendered = false; // 本次查询是否已经把内容渲染出来过
-    // 换任务/筛选/排序 = 换了一条播报流:清掉「新」标记和未读基线。翻页不算换流,
-    // 否则回到最新时就没有未读计数可算了。
+    let rendered = false; // この検索が内容をすでに描画したか
+    // タスク、絞り込み、並び替えを変えることは、投稿の流れを変えることである。「新」の印と未読の基準を消す。ページ送りは流れの変更に数えない。
+    // そうしないと、最新へ戻ったときに未読件数が計算できない。
     const stream = `${taskId}|${kinds.join(",")}|${query}|${order}`;
     if (streamRef.current !== stream) {
       streamRef.current = stream;
@@ -489,7 +489,7 @@ export function BroadcastTab({ taskId }: { taskId: string }) {
         .explorationNodes(taskId, { page, size, kinds, q: query, order })
         .then((r) => {
           if (!alive) return;
-          // 直播位每轮都刷新;其它位置只渲染第一次,之后轮询仅更新未读计数。
+          // ライブ位置は毎ラウンド更新する。ほかの位置は初回だけ描画し、その後のポーリングは未読数だけを更新する。
           if (atLive || !rendered) {
             rendered = true;
             setItems(r.items);
@@ -511,7 +511,7 @@ export function BroadcastTab({ taskId }: { taskId: string }) {
           setLoaded(true);
         })
         .catch(() => {
-          // 轮询是尽力而为:保留上一次成功的播报内容,下一轮自动重试。
+          // ポーリングはベストエフォート。前回成功した投稿内容を残し、次の周回で自動再試行する。
         });
     void load();
     if (!live) {
@@ -537,8 +537,8 @@ export function BroadcastTab({ taskId }: { taskId: string }) {
     setPending(0);
   };
 
-  // 服务端的 refs 只补「不在本页的邻居」,同页节点之间的引用要靠 items 自己兜底,
-  // 否则相邻两条播报互相引用时会退化成光秃秃的「节点 #id」。
+  // サーバーの refs は「このページに無い隣接」だけを補う。同じページのノード同士の参照は items 自身が埋める。
+  // そうしないと、隣り合う2件の投稿が互いを参照したとき、中身の無い「ノード #id」に落ちる。
   const nodeIndex = React.useMemo(() => {
     const idx: Record<string, TaskNode> = { ...refs };
     for (const n of items) idx[n.id] = n;
@@ -549,12 +549,12 @@ export function BroadcastTab({ taskId }: { taskId: string }) {
   const start = total === 0 ? 0 : (page - 1) * size + 1;
   const end = (page - 1) * size + items.length;
 
-  // 换任务或筛选后条数变少时,把越界的页码收回来。
+  // タスクや絞り込みを変えて件数が減ったとき、範囲外のページ番号を戻す。
   React.useEffect(() => {
     if (page > pageCount) setPage(pageCount);
   }, [page, pageCount]);
 
-  // 按天分组:播报流按日期断行,长任务翻页时还能认出「这是哪天的事」。
+  // 日ごとに分ける。投稿の流れを日付で区切り、長いタスクでページを送っても「いつのことか」が分かる。
   const groups: Array<{ day: string; rows: TaskNode[] }> = [];
   for (const node of items) {
     const ts = Date.parse(node.ts);
@@ -642,7 +642,7 @@ export function BroadcastTab({ taskId }: { taskId: string }) {
         </div>
       </div>
 
-      {/* 离开直播位时的未读提示 */}
+      {/* ライブ位置を離れたときの未読表示 */}
       {!atLive && pending > 0 && (
         <button
           type="button"

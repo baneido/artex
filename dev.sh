@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
-# 开发模式：后端(:8787) + 流量代理(:8788) 与 前端 next dev(:5173) 一起跑。
-# 前端 /api 反代到后端；Ctrl-C 一并退出。
+# 開発モード。バックエンド (:8787) とトラフィックプロキシ (:8788)、フロントの next dev (:5173) を同時に起動する。
+# フロントの /api はバックエンドへプロキシする。Ctrl-C でまとめて終了する。
 #
-# 单二进制（前端内嵌）方式见 README「单二进制」一节，不走这个脚本。
+# 単一バイナリ（フロント埋め込み）は README の「単一バイナリ」を参照する。このスクリプトでは行わない。
 set -euo pipefail
 cd "$(dirname "$0")"
 
-# 退出时结束本进程组内的所有子进程（后端 + 前端）。
+# 終了時に、このプロセスグループの子プロセス（バックエンドとフロント）をすべて止める。
 cleanup() { kill 0 2>/dev/null || true; }
 trap cleanup EXIT INT TERM
 
-# 后端（普通 go run，不内嵌前端）；并发 work agent 数在「系统设置」里配置。
+# バックエンド（通常の go run。フロントは埋め込まない）。同時に動かす work agent の数は「システム設定」で決める。
 go run ./cmd/artex -addr :8787 -proxy 127.0.0.1:8788 &
 
-# 前端热更新（Vite/Next dev server，/api 反代到 :8787）。
+# フロントのホットリロード（Next の dev server。/api は :8787 へプロキシする）。
 ( cd web && npm run dev ) &
 
-echo "[dev] 后端 :8787 / 代理 :8788 / 前端 http://localhost:5173  (Ctrl-C 退出)"
+echo "[dev] バックエンド :8787 / プロキシ :8788 / フロント http://localhost:5173  (Ctrl-C で終了)"
 wait

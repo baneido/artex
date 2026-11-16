@@ -12,32 +12,32 @@ import (
 	"time"
 )
 
-// feishuChannel 实现飞书（含 Lark）自定义机器人，走交互式卡片。
+// feishuChannel は Feishu（Lark を含む）のカスタムロボットを実装し、対話型カードを使います。
 //
-// 平台特性：
-//   - 加签算法与钉钉**不同**，且极易写错，见 feishuSign 注释。
-//   - 与钉钉一样把业务错误塞在 HTTP 200 的 body 里（code != 0）。
-//   - 卡片 header 支持颜色模板，用级别映射配色，让人在消息列表里一眼看出严重程度。
+// プラットフォームの特性:
+//   - 署名アルゴリズムは DingTalk と違います。書き間違いやすいので、feishuSign のコメントを参照してください。
+//   - DingTalk と同じく、業務エラーを HTTP 200 の body に入れます（code != 0）。
+//   - カードの header は色テンプレートに対応しています。深刻度を色に対応させ、メッセージ一覧で深刻度がすぐ分かるようにします。
 type feishuChannel struct{}
 
 func (feishuChannel) Kind() string { return KindFeishu }
 
-// 飞书自定义机器人约 5 次/秒，折合 100 次/分钟。
+// Feishu のカスタムロボットは約 5 回/秒で、1 分あたり 100 回に相当します。
 func (feishuChannel) DefaultRatePerMin() int { return 100 }
 
-// Webhook 地址末段即机器人唯一标识，属凭据。
+// Webhook アドレスの末尾がロボットの一意な識別子で、認証情報です。
 func (feishuChannel) SecretKeys() []string { return []string{"webhook", "secret"} }
 
-// 同理：改 Webhook 地址必须对新地址重新表态签名密钥。
+// 同じ理由です。Webhook アドレスを変えるときは、新しいアドレスの署名秘密を改めて指定します。
 func (feishuChannel) DestinationKeys() []string { return []string{"webhook"} }
 
 func (feishuChannel) Validate(cfg map[string]any) error {
 	hook := cfgString(cfg, "webhook")
 	if hook == "" {
-		return errors.New("缺少 Webhook 地址")
+		return errors.New("Webhook アドレスがありません")
 	}
 	if err := validateHTTPURL(hook); err != nil {
-		return fmt.Errorf("Webhook 地址无效: %w", err)
+		return fmt.Errorf("Webhook アドレスが無効です: %w", err)
 	}
 	return nil
 }
@@ -51,7 +51,7 @@ func (c feishuChannel) Send(ctx context.Context, cfg map[string]any, m Message) 
 		"msg_type": "interactive",
 		"card":     card,
 	}
-	// 加签参数与消息同层，且只在配置了 secret 时出现。
+	// 署名パラメータはメッセージと同じ階層で、secret を設定したときだけ現れます。
 	if secret := cfgString(cfg, "secret"); secret != "" {
 		ts := strconv.FormatInt(time.Now().Unix(), 10)
 		payload["timestamp"] = ts
@@ -64,39 +64,39 @@ func (c feishuChannel) Send(ctx context.Context, cfg map[string]any, m Message) 
 	var res struct {
 		Code int    `json:"code"`
 		Msg  string `json:"msg"`
-		// 部分版本的飞书 hook 用这套字段名，一并兼容。
+		// 一部バージョンの Feishu hook はこのフィールド名を使うので、合わせて受けます。
 		StatusCode    int    `json:"StatusCode"`
 		StatusMessage string `json:"StatusMessage"`
 	}
 	if err := json.Unmarshal(raw, &res); err != nil {
-		return 0, fmt.Errorf("解析飞书响应失败: %w (%s)", err, snippet(raw))
+		return 0, fmt.Errorf("Feishu の応答を解析できませんでした: %w (%s)", err, snippet(raw))
 	}
 	if res.Code != 0 {
-		return 0, Permanent(fmt.Errorf("飞书返回错误 %d: %s", res.Code, res.Msg))
+		return 0, Permanent(fmt.Errorf("Feishu がエラー %d を返しました: %s", res.Code, res.Msg))
 	}
 	if res.StatusCode != 0 {
-		return 0, Permanent(fmt.Errorf("飞书返回错误 %d: %s", res.StatusCode, res.StatusMessage))
+		return 0, Permanent(fmt.Errorf("Feishu がエラー %d を返しました: %s", res.StatusCode, res.StatusMessage))
 	}
 	return kept, nil
 }
 
-// feishuSign 按飞书官方规则计算签名。
+// feishuSign は Feishu 公式の規則で署名を計算します。
 //
-// 这里特别容易踩坑：官方样例是
+// ここは特に間違えやすいです。公式サンプルは次です。
 //
 //	hmac.new(string_to_sign.encode(), digestmod=sha256)
 //
-// 也就是 **key = timestamp + "\n" + secret，message 为空**，而不是直觉上的
-// 「key=secret, message=stringToSign」——那正是钉钉的算法。两边算法刚好反过来，
-// 照着另一家的实现写必然签名校验失败（报 19021）。
+// つまり key = timestamp + "\n" + secret で、message は空です。「key=secret, message=stringToSign」ではありません。
+// 後者は DingTalk のアルゴリズムです。両者はちょうど逆で、
+// もう一方の実装を写すと署名検証が必ず失敗します（19021 を返します）。
 func feishuSign(timestamp, secret string) string {
 	stringToSign := timestamp + "\n" + secret
 	mac := hmac.New(sha256.New, []byte(stringToSign))
 	return base64.StdEncoding.EncodeToString(mac.Sum(nil))
 }
 
-// feishuSeverityTemplate 把漏洞级别映射到卡片 header 配色模板。
-// 未知级别用 grey——不用 blue，免得和 low 混淆。
+// feishuSeverityTemplate は脆弱性の深刻度をカード header の色テンプレートへ対応させます。
+// 未知の深刻度は grey です。blue は使いません。low と混ざるためです。
 func feishuSeverityTemplate(severity string) string {
 	switch severity {
 	case "critical":
@@ -112,18 +112,18 @@ func feishuSeverityTemplate(severity string) string {
 	}
 }
 
-// feishuMaxCardBytes 是卡片内容的保守上限。飞书对卡片有体积限制，超了整条被拒；
-// 取一个明显低于官方上限的值，把 JSON 包装开销也算进来。
+// feishuMaxCardBytes はカード内容の保守的な上限です。Feishu はカードにサイズ制限があり、超えるとメッセージ全体が拒否されます。
+// 公式上限より明らかに低い値を取り、JSON の包みのオーバーヘッドも含めます。
 const feishuMaxCardBytes = 24000
 
-// feishuCard 构造交互式卡片，返回卡片与**实际写入的条目数**。
-// kept 的用途同 markdownBody：只有真正进了卡片的条目才该被标记为已送达。
+// feishuCard は対話型カードを組み立て、カードと実際に書いた件数を返します。
+// kept の用途は markdownBody と同じです。カードに本当に入った項目だけを、届いたものとして印を付けます。
 func feishuCard(m Message) (map[string]any, int) {
 	elements := []any{}
 	kept := 0
 	if m.Batch {
-		// 先按整条打包再拼头部：头部要写「其余 N 条将在下一条消息继续」，
-		// N 必须来自实际装下的条数。
+		// 先に件単位で詰めてから先頭を組み立てます。先頭には「残り N 件は次のメッセージで続きます」と書くので、
+		// N は実際に入った件数から取ります。
 		kept = packItemCount(m.Items, feishuMaxCardBytes, markdownReservedBytes, "", byteSize, func(it Item, idx int) string {
 			return feishuBatchLine(it, idx+1)
 		})
@@ -133,14 +133,14 @@ func feishuCard(m Message) (map[string]any, int) {
 			elements = append(elements, feishuMarkdownDiv(feishuBatchLine(it, i+1)))
 		}
 		if m.HomeURL != "" {
-			elements = append(elements, feishuButton("在平台中查看全部", m.HomeURL))
+			elements = append(elements, feishuButton("プラットフォームですべて見る", m.HomeURL))
 		}
 	} else if len(m.Items) > 0 {
 		kept = 1
 		it := m.Items[0]
 		elements = append(elements, feishuMarkdownDiv(feishuItemLines(it)))
 		if it.DetailURL != "" {
-			elements = append(elements, feishuButton("查看详情", it.DetailURL))
+			elements = append(elements, feishuButton("詳細を見る", it.DetailURL))
 		}
 	}
 
@@ -171,36 +171,36 @@ func feishuButton(label, url string) map[string]any {
 	}
 }
 
-// feishuItemLines 渲染单个漏洞的 lark_md 正文。
+// feishuItemLines は脆弱性 1 件の lark_md 本文を描画します。
 //
-// lark_md 与 markdown 是同族的文本格式，同样会解析链接与强调，所以来自外部
-// 的字段一律过 markdownText（单行化 + 转义）——否则一条漏洞标题就能在
-// 飞书里变成可点击的外链。
+// lark_md と markdown は同族のテキスト形式で、同じくリンクと強調を解釈します。外部から来た
+// フィールドはすべて markdownText（1 行化とエスケープ）を通します。通さないと、脆弱性タイトル 1 件が
+// Feishu 上でクリックできる外部リンクになります。
 func feishuItemLines(it Item) string {
-	out := fmt.Sprintf("**%s · %s**", SeverityLabel(it.Severity), markdownText(it.Title(), 0))
+	out := fmt.Sprintf("**%s %s**", SeverityLabel(it.Severity), markdownText(it.Title(), 0))
 	if it.IsStatusChange() {
-		out += fmt.Sprintf("\n**状态变更**：%s → %s",
+		out += fmt.Sprintf("\n**状態の変更**: %s から %s",
 			markdownText(StatusLabel(it.FromStatus), 0), markdownText(StatusLabel(it.ToStatus), 0))
 	}
 	if it.VulnClass != "" && it.VulnClass != it.Title() {
-		out += fmt.Sprintf("\n**类型**：%s", markdownText(it.VulnClass, 0))
+		out += fmt.Sprintf("\n**種別**: %s", markdownText(it.VulnClass, 0))
 	}
 	if a := assetLine(it.Assets, maxAssetsShown); a != "" {
-		out += fmt.Sprintf("\n**资产**：%s", markdownText(a, 0))
+		out += fmt.Sprintf("\n**資産**: %s", markdownText(a, 0))
 	}
 	if it.Summary != "" {
 		if s := markdownText(it.Summary, maxSummaryRunes); s != "" {
-			out += fmt.Sprintf("\n**摘要**：%s", s)
+			out += fmt.Sprintf("\n**要約**: %s", s)
 		}
 	}
 	return out
 }
 
-// feishuBatchLine 渲染汇总卡片里的一条。
+// feishuBatchLine はまとめカードの 1 件を描画します。
 func feishuBatchLine(it Item, index int) string {
-	line := fmt.Sprintf("**%d. %s · %s**", index, SeverityLabel(it.Severity), markdownText(it.Title(), 0))
+	line := fmt.Sprintf("**%d. %s %s**", index, SeverityLabel(it.Severity), markdownText(it.Title(), 0))
 	if a := assetLine(it.Assets, maxAssetsShown); a != "" {
-		line += " — " + markdownText(a, 0)
+		line += " / " + markdownText(a, 0)
 	}
 	return line
 }

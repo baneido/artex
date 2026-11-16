@@ -7,8 +7,8 @@ import (
 	"github.com/Autumn-27/artex/db"
 )
 
-// 任务级资产拦截/允许规则的 CRUD。规则按 task_id 归属，仅对该任务生效：
-// action=block 拦截(禁止测试)，action=allow 允许(白名单)。执行判定见 db.EvaluateAssetGate。
+// タスク単位の資産インターセプトと許可ルールの CRUD。ルールは task_id に属し、そのタスクだけで効く。
+// action=block はインターセプト（テストを禁止）、action=allow は許可（許可リスト）。実行時の判定は db.EvaluateAssetGate。
 
 type taskInterceptRuleReq struct {
 	Enabled bool   `json:"enabled"`
@@ -18,7 +18,7 @@ type taskInterceptRuleReq struct {
 	Note    string `json:"note"`
 }
 
-// validateTaskInterceptRuleReq 归一并校验；复用全局规则的 kind/pattern 校验器。
+// validateTaskInterceptRuleReq は正規化して検証する。全体ルールの kind/pattern の検証を使う。
 func validateTaskInterceptRuleReq(req *taskInterceptRuleReq) error {
 	if req.Action == "" {
 		req.Action = "block"
@@ -30,11 +30,11 @@ func validateTaskInterceptRuleReq(req *taskInterceptRuleReq) error {
 	if err := validateAssetInterceptRuleReq(&v); err != nil {
 		return err
 	}
-	req.Pattern = v.Pattern // 已 trim
+	req.Pattern = v.Pattern // trim 済み
 	return nil
 }
 
-// buildTaskInterceptRules 校验创建任务时录入的任务级规则并转换为 db 输入形态。
+// buildTaskInterceptRules は、タスク作成時に入ったタスク単位のルールを検証し、db の入力形へ変換する。
 func buildTaskInterceptRules(reqs []taskInterceptRuleReq) ([]db.TaskInterceptRuleInput, error) {
 	if len(reqs) == 0 {
 		return nil, nil

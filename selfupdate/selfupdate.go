@@ -1,23 +1,23 @@
-// Package selfupdate implements ARTEX 的页面一键更新：从 GitHub Release 拉取新版
-// 二进制、校验、暂存，并在下次启动时原子换装。
+// Package selfupdate implements ARTEX の画面からのワンクリックアップデートだ。GitHub Release から新しい
+// バイナリを取得し、検証し、一時保存し、次回起動時に原子的に入れ替える。
 //
-// 整体分工（见 start.sh / start.bat）：
+// 全体の分担（start.sh / start.bat を参照）:
 //
-//	启动脚本  = 傻瓜守护循环，只负责"进程退出后按退出码决定是否再拉起"
-//	本包      = 全部易错逻辑（下载 / SHA256 校验 / 冒烟 / 换装 / 失败回滚）
+//	起動スクリプト = 単純な守護ループ。プロセス終了後、終了コードで再起動するかを決めるだけ
+//	このパッケージ = 誤りやすい処理のすべて（ダウンロード / SHA256 検証 / スモーク / 入れ替え / 失敗時のロールバック）
 //
-// 之所以把换装放在 Go 而不是脚本里，是因为 sha256 校验和冒烟测试在 sh 和 bat 上
-// 要写两套（sha256sum / shasum / certutil），而这恰恰是最不能出错的一环——换上一个
-// 跑不起来的二进制，守护进程会忠实地反复拉起它，用户只能上机器手工救。
+// 入れ替えをスクリプトではなく Go に置く理由は、sha256 検証とスモークテストを sh と bat で
+// 2 通り書く必要があるからだ（sha256sum / shasum / certutil）。ここが最も誤ってはいけない箇所だ。動かない
+// バイナリに入れ替えると、守護プロセスは忠実に繰り返し起動し、ユーザーはマシンに入って手で救うしかない。
 //
-// 一次完整升级经过三次进程启动：
+// 1 回の完全なアップデートは、プロセス起動を 3 回通る。
 //
-//	① 旧版 server 收到 /api/update/apply → 下载校验 → 暂存 artex.new → exit 75
-//	② 脚本重新拉起旧版 → Bootstrap 发现 artex.new → 校验+冒烟 → 换装 → exit 75
-//	③ 脚本重新拉起，此时已是新版 → Bootstrap 记一次尝试 → 启动成功后清除标记
+//	① 旧版 server が /api/update/apply を受ける → ダウンロードして検証 → artex.new を一時保存 → exit 75
+//	② スクリプトが旧版を再起動 → Bootstrap が artex.new を見つける → 検証とスモーク → 入れ替え → exit 75
+//	③ スクリプトが再起動し、この時点で新版 → Bootstrap が試行を 1 回記録 → 起動成功後に印を消す
 //
-// 任何一步失败都退回旧版：② 校验不过就删掉暂存件继续跑旧版；③ 连续 3 次没活到
-// 清除标记（起不来就崩）则自动把 artex.old 换回去。
+// どの段階が失敗しても旧版へ戻る。② の検証が通らなければ一時ファイルを消して旧版を動かし続ける。③ で印を消すまで
+// 3 回連続で生きなければ（起動できず落ちる）、artex.old を自動で戻す。
 package selfupdate
 
 import (
@@ -29,41 +29,41 @@ import (
 	"strings"
 )
 
-// ExitRestart 是"请守护进程重新拉起我"的退出码（EX_TEMPFAIL）。启动脚本看到它
-// 就立刻重跑，不计入崩溃退避。0 表示用户正常停止（脚本退出循环），其余均视为崩溃。
+// ExitRestart は「守護プロセスは私を再起動してください」という終了コードだ（EX_TEMPFAIL）。起動スクリプトはこれを見ると
+// すぐに再実行し、クラッシュの退避には数えない。0 はユーザーが正常に停止したことを示す（スクリプトはループを抜ける）。それ以外はクラッシュとみなす。
 const ExitRestart = 75
 
-// maxAttempts 是换装后允许的启动尝试次数。新版每次启动都会把计数 +1，活过
-// settleDelay 则清除标记；连崩 maxAttempts 次说明新版根本起不来，自动回滚。
+// maxAttempts は、入れ替え後に許す起動試行回数だ。新版は起動のたびにカウントを +1 し、settleDelay を生き抜けば
+// 印を消す。maxAttempts 回連続で落ちるのは、新版がそもそも起動できないということで、自動でロールバックする。
 const maxAttempts = 3
 
-// Paths 是一次升级涉及的全部文件，统一挂在**可执行文件所在目录**下。
-// 刻意不用 CWD：服务化运行时工作目录可能是 / 或任意路径，用 CWD 会让暂存件落到
-// 别处，换装逻辑直接失效。
+// Paths は 1 回のアップデートに関わるファイル一式で、実行ファイルのあるディレクトリにまとめて置く。
+// CWD は意図して使わない。サービスとして動くときの作業ディレクトリは / や任意のパスになり得て、CWD を使うと一時ファイルが
+// 別の場所に落ち、入れ替えがそのまま無効になる。
 type Paths struct {
-	Dir     string // 可执行文件所在目录
-	Current string // 当前运行的二进制        artex      / artex.exe
-	New     string // 暂存的新版本            artex.new  / artex.new.exe
-	Sum     string // 新版本的 sha256（hex）  artex.new.sha256 / artex.new.exe.sha256
-	Old     string // 换装前备份的旧版本      artex.old  / artex.old.exe
-	Marker  string // 升级状态标记            artex.upgrade.json
+	Dir     string // 実行ファイルのあるディレクトリ
+	Current string // 現在動いているバイナリ        artex      / artex.exe
+	New     string // 一時保存した新版            artex.new  / artex.new.exe
+	Sum     string // 新版の sha256（hex）  artex.new.sha256 / artex.new.exe.sha256
+	Old     string // 入れ替え前に退避した旧版      artex.old  / artex.old.exe
+	Marker  string // アップデート状態の印            artex.upgrade.json
 }
 
-// ResolvePaths 按当前可执行文件推导全部升级路径。
+// ResolvePaths は、現在の実行ファイルからアップデート用のパスをすべて導く。
 //
-// Windows 上 .new/.old 也必须带 .exe 后缀，否则冒烟测试和换装后的执行都会失败，
-// 所以先把后缀摘掉再拼，两个平台的命名才对称。
+// Windows では .new/.old にも .exe 接尾辞が要る。無いとスモークテストも入れ替え後の実行も失敗する。
+// そのため先に接尾辞を外してから繋ぎ、両プラットフォームの名前を対称にする。
 func ResolvePaths() (Paths, error) {
 	exe, err := os.Executable()
 	if err != nil {
-		return Paths{}, fmt.Errorf("定位可执行文件: %w", err)
+		return Paths{}, fmt.Errorf("実行ファイルを特定できませんでした: %w", err)
 	}
 	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
 		exe = resolved
 	}
 	dir := filepath.Dir(exe)
 	name := filepath.Base(exe)
-	ext := filepath.Ext(name) // Windows 上是 ".exe"，Unix 上通常为空
+	ext := filepath.Ext(name) // Windows では ".exe"。Unix では通常空
 	stem := strings.TrimSuffix(name, ext)
 
 	join := func(suffix string) string { return filepath.Join(dir, stem+suffix+ext) }
@@ -77,11 +77,11 @@ func ResolvePaths() (Paths, error) {
 	}, nil
 }
 
-// marker 记录一次换装的进度，用来在新版起不来时触发自动回滚。
+// marker は 1 回の入れ替えの進捗を記録し、新版が起動できないときに自動ロールバックを起こす。
 type marker struct {
-	From     string `json:"from"`     // 升级前的版本
-	To       string `json:"to"`       // 目标版本
-	Attempts int    `json:"attempts"` // 换装后已尝试启动的次数
+	From     string `json:"from"`     // アップデート前のバージョン
+	To       string `json:"to"`       // 目標バージョン
+	Attempts int    `json:"attempts"` // 入れ替え後に起動を試した回数
 	StagedAt int64  `json:"staged_at"`
 }
 
@@ -105,17 +105,17 @@ func writeMarker(path string, m marker) error {
 	return os.WriteFile(path, b, 0o644)
 }
 
-// cleanStaged 清掉暂存件。换装成功、校验失败、用户取消都走它，避免残留的
-// artex.new 在下次启动时被重新尝试。
+// cleanStaged は一時ファイルを消す。入れ替え成功、検証失敗、ユーザーの取り消しはどれもここを通り、残った
+// artex.new が次回起動で再試行されないようにする。
 func cleanStaged(p Paths) {
 	_ = os.Remove(p.New)
 	_ = os.Remove(p.Sum)
 }
 
-// CompareVersions 比较两个版本号，返回 -1/0/1（a<b / a==b / a>b）。
-// ok=false 表示至少一边不是可比较的版本号（例如本地开发构建的 "dev" 或
-// git describe 产出的 "0.3.7-2-gabc1234-dirty"），此时调用方应禁用一键更新，
-// 否则会把开发中的构建"升级"成正式版、覆盖掉未提交的改动。
+// CompareVersions は 2 つのバージョン番号を比べ、-1/0/1 を返す（a<b / a==b / a>b）。
+// ok=false は、少なくとも片方が比較できるバージョン番号ではないことを示す（ローカル開発ビルドの "dev" や
+// git describe が出す "0.3.7-2-gabc1234-dirty"）。このとき呼び出し側はワンクリックアップデートを無効にする。
+// 無効にしないと、開発中のビルドを正式版へ「アップデート」し、未コミットの変更を上書きする。
 func CompareVersions(a, b string) (int, bool) {
 	av, aok := parseVersion(a)
 	bv, bok := parseVersion(b)
@@ -133,11 +133,11 @@ func CompareVersions(a, b string) (int, bool) {
 	return 0, true
 }
 
-// parseVersion 解析 "v0.3.7" / "0.3.7" 形式的版本号为 [3]int。
+// parseVersion は "v0.3.7" / "0.3.7" 形式のバージョン番号を [3]int に解析する。
 //
-// 只接受纯净的三段式：build.sh 在非 tag 构建时用 git describe 产出
-// "0.3.7-2-gabc1234" 这类带后缀的版本，它们必须被判为不可比较，而不是被当成
-// 0.3.7 —— 否则开发构建会被误判为"已是最新"或被正式版覆盖。
+// 受け付けるのは純粋な 3 区切りだけだ。build.sh は tag 以外のビルドで git describe を使い、
+// "0.3.7-2-gabc1234" のような接尾辞付きバージョンを出す。それらは比較不能と判定し、0.3.7 として扱わない。
+// そうしないと、開発ビルドを「最新である」と誤るか、正式版で上書きする。
 func parseVersion(s string) ([3]int, bool) {
 	s = strings.TrimSpace(s)
 	s = strings.TrimPrefix(s, "v")
@@ -159,9 +159,9 @@ func parseVersion(s string) ([3]int, bool) {
 	return out, true
 }
 
-// InDocker 报告进程是否跑在容器里。Docker 下换装写的是容器可写层，
-// `docker compose up -d` 重建容器会退回镜像自带的版本——这是预期行为
-// （那时用户本来就在拉新镜像），但前端要能据此把话说清楚。
+// InDocker は、プロセスがコンテナ内で動いているかを報告する。Docker での入れ替えが書くのはコンテナの書き込み層で、
+// `docker compose up -d` でコンテナを作り直すとイメージ同梱のバージョンへ戻る。これは想定どおりの動作だ
+// （そのときユーザーは新しいイメージを取得している）。フロントはこの事実を説明できる必要がある。
 func InDocker() bool {
 	if _, err := os.Stat("/.dockerenv"); err == nil {
 		return true

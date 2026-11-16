@@ -76,7 +76,7 @@ function tryFormatJSON(s: string): string {
   }
 }
 
-// 复制当前框内文本的小按钮。复制成功后短暂显示对勾。text 为空/仅占位符时禁用。
+// 現在の枠内のテキストをコピーする小さいボタン。成功すると短い間チェックを出す。text が空、またはプレースホルダだけのときは無効。
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = React.useState(false);
   const timer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -139,15 +139,15 @@ export default function LLMRecordsPage() {
   const [selected, setSelected] = React.useState<LLMRecordItem | null>(null);
   const [detail, setDetail] = React.useState<LLMRecordDetail | null>(null);
   const [detailLoading, setDetailLoading] = React.useState(false);
-  // 归一化视图 / HTTP 原文视图。原文是排查 provider 侧问题的唯一依据：归一化视图
-  // 不含工具 schema，响应里也没有 tool_use 块。
+  // 正規化ビュー / HTTP 原文ビュー。原文は provider 側の問題を調べる唯一の根拠である。正規化ビューには
+  // ツール schema が含まれず、レスポンスにも tool_use ブロックがない。
   const [rawView, setRawView] = React.useState(false);
 
   const hasRaw = !!(detail?.raw_request || detail?.raw_response);
-  // 开关保持用户选择，但切到一条无原文的旧记录时自动落回解析视图，而不是显示空白。
+  // スイッチはユーザーの選択を保つ。原文のない古い記録へ切り替えたときは、空白を出さず解析ビューへ戻す。
   const showRaw = rawView && hasRaw;
-  // 原文请求体是 JSON，pretty-print 只改排版不改语义，便于阅读；原文响应是 SSE
-  // 帧，tryFormatJSON 解析失败会原样返回，故两边共用一个函数即可。
+  // 原文のリクエストボディは JSON で、pretty-print は体裁だけ変えて意味は変えない。読みやすくするため。原文のレスポンスは SSE
+  // フレームで、tryFormatJSON は解析に失敗するとそのまま返す。だから両方で同じ関数を使える。
   const reqText = showRaw
     ? detail?.raw_request && tryFormatJSON(detail.raw_request)
     : detail?.request_body && tryFormatJSON(detail.request_body);
@@ -485,8 +485,8 @@ export default function LLMRecordsPage() {
               ) : (
                 <Badge variant="destructive" className="text-xs">Error</Badge>
               )}
-              {/* 原文视图开关。旧记录没有原文，此时禁用而非静默回退，避免看着像
-                  「原文与解析一致」。 */}
+              {/* 原文ビューのスイッチ。古い記録には原文がない。このときは黙って戻さず無効にする。
+                  「原文と解析が一致している」ように見えないようにするため。 */}
               <Button
                 variant={showRaw ? "secondary" : "ghost"}
                 size="sm"

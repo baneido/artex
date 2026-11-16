@@ -249,7 +249,7 @@ export default function TrafficPage() {
     [hosts, hostCountSortDirection],
   );
 
-  // "清空" for the unfiltered purge, "删除" for the host-scoped ones — the dialog's
+  // "クリア" for the unfiltered purge, "削除" for the host-scoped ones — the dialog's
   // title and its confirm button both follow from which is in play.
   const deleteVerb = deleteMode === "all" ? "クリア" : "削除";
   const deleteTitle = deleteMode

@@ -24,7 +24,7 @@ const Enabled = false
 
 // ErrDisabled is returned by every online-update entry point while Enabled is
 // false.
-var ErrDisabled = errors.New("在线更新已禁用：本地构建不检查或下载远程版本")
+var ErrDisabled = errors.New("オンラインアップデートは無効です。ローカルビルドはリモートのバージョンを確認せず、ダウンロードもしません")
 
 // Repo remains a fixed source identifier; online access is disabled above.
 // Keep the URL derived from it so a future reviewed source edit cannot leave
@@ -32,18 +32,18 @@ var ErrDisabled = errors.New("在线更新已禁用：本地构建不检查或�
 const Repo = "failsafe-security/artex"
 const latestURL = "https://api.github.com/repos/" + Repo + "/releases/latest"
 
-// allowedHosts 限定升级链路能访问的域名。配合下面的 checkRedirect，
-// 任何一跳被重定向到名单外的主机都会直接失败——这是防止 DNS 污染 / 中间人
-// 把二进制换掉的第一道闸门，第二道是 SHA256SUMS 比对。
+// allowedHosts は、アップデート経路がアクセスできるドメインを限る。下の checkRedirect と合わせ、
+// どのホップでも名簿外のホストへリダイレクトされたら、そのまま失敗する。これが DNS 汚染や中間者による
+// バイナリ差し替えを止める最初の門で、2 番目は SHA256SUMS の照合だ。
 var allowedHosts = map[string]bool{
 	"api.github.com":                       true,
 	"github.com":                           true,
-	"objects.githubusercontent.com":        true, // release 资产实际落地的对象存储
+	"objects.githubusercontent.com":        true, // release 資産が実際に置かれるオブジェクトストレージ
 	"release-assets.githubusercontent.com": true,
 	"raw.githubusercontent.com":            true,
 }
 
-// Release 是 GitHub Release 里我们关心的字段。
+// Release は、GitHub Release のうちこのパッケージが使うフィールドだ。
 type Release struct {
 	TagName     string    `json:"tag_name"`
 	Name        string    `json:"name"`
@@ -55,17 +55,17 @@ type Release struct {
 	Assets      []Asset   `json:"assets"`
 }
 
-// Asset 是 Release 上挂的一个文件。
+// Asset は Release に付いた 1 ファイルだ。
 type Asset struct {
 	Name string `json:"name"`
 	URL  string `json:"browser_download_url"`
 	Size int64  `json:"size"`
 }
 
-// NewClient 构造一个只认 GitHub 域名的 HTTP 客户端。proxy 为空则直连。
+// NewClient は、GitHub のドメインだけを認める HTTP クライアントを作る。proxy が空なら直接接続する。
 //
-// 刻意不复用默认 Transport：升级链路必须强制走 TLS 且校验证书，不能被别处
-// 设置的 InsecureSkipVerify 之类影响到。
+// 既定の Transport は意図して使い回さない。アップデート経路は TLS を強制し、証明書を検証する。別の場所で
+// 設定した InsecureSkipVerify などの影響を受けない。
 func NewClient(proxy string) *http.Client {
 	tr := &http.Transport{
 		ForceAttemptHTTP2:   true,
@@ -78,28 +78,28 @@ func NewClient(proxy string) *http.Client {
 	}
 	return &http.Client{
 		Transport: tr,
-		Timeout:   30 * time.Minute, // 下载整包，不能按请求级超时卡死
+		Timeout:   30 * time.Minute, // パッケージ全体のダウンロード。リクエスト単位のタイムアウトで止めてはいけない
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if len(via) >= 10 {
-				return fmt.Errorf("重定向次数过多")
+				return fmt.Errorf("リダイレクトが多すぎます")
 			}
 			return checkURL(req.URL)
 		},
 	}
 }
 
-// checkURL 强制 https + 域名白名单。
+// checkURL は https とドメイン許可リストを強制する。
 func checkURL(u *url.URL) error {
 	if u.Scheme != "https" {
-		return fmt.Errorf("拒绝非 HTTPS 地址: %s", u.Scheme+"://"+u.Host)
+		return fmt.Errorf("HTTPS 以外のアドレスは拒否します: %s", u.Scheme+"://"+u.Host)
 	}
 	if !allowedHosts[strings.ToLower(u.Hostname())] {
-		return fmt.Errorf("拒绝非 GitHub 域名: %s", u.Hostname())
+		return fmt.Errorf("GitHub 以外のドメインは拒否します: %s", u.Hostname())
 	}
 	return nil
 }
 
-// FetchLatest 查询最新正式版。
+// FetchLatest は最新の正式版を問い合わせる。
 //
 // Disabled in this fork: it returns ErrDisabled without making any network
 // request while Enabled is false.
@@ -119,37 +119,37 @@ func FetchLatest(ctx context.Context, c *http.Client) (*Release, error) {
 
 	resp, err := c.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("访问 GitHub 失败（可在系统设置里配置全局代理）: %w", err)
+		return nil, fmt.Errorf("GitHub にアクセスできませんでした（システム設定でグローバルプロキシを設定できます）: %w", err)
 	}
 	defer resp.Body.Close()
 
 	switch {
 	case resp.StatusCode == http.StatusForbidden, resp.StatusCode == http.StatusTooManyRequests:
-		// 未认证的 GitHub API 是每 IP 每小时 60 次，共用出口 IP 时很容易撞上。
-		return nil, fmt.Errorf("GitHub 接口限流（每小时 60 次），请稍后再试")
+		// 未認証の GitHub API は IP ごとに 1 時間 60 回で、出口 IP を共有しているとすぐに当たる。
+		return nil, fmt.Errorf("GitHub API が制限しています（1 時間に 60 回）。しばらくしてから再試行してください")
 	case resp.StatusCode == http.StatusNotFound:
-		return nil, fmt.Errorf("仓库 %s 不可访问或尚未发布正式版本", Repo)
+		return nil, fmt.Errorf("リポジトリ %s にアクセスできないか、正式版がまだ公開されていません", Repo)
 	case resp.StatusCode != http.StatusOK:
-		return nil, fmt.Errorf("GitHub 返回 %d", resp.StatusCode)
+		return nil, fmt.Errorf("GitHub が %d を返しました", resp.StatusCode)
 	}
 
 	var rel Release
 	if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil {
-		return nil, fmt.Errorf("解析 Release 失败: %w", err)
+		return nil, fmt.Errorf("Release を解析できませんでした: %w", err)
 	}
 	if strings.TrimSpace(rel.TagName) == "" {
-		return nil, fmt.Errorf("Release 缺少 tag")
+		return nil, fmt.Errorf("Release に tag がありません")
 	}
 	return &rel, nil
 }
 
-// AssetName 返回当前平台对应的发布包名，与 build.sh 的 package_binary 保持一致：
-// artex-<版本>-<os>-<arch>.zip（版本号不带 v 前缀）。
+// AssetName は現在のプラットフォームに対応するリリースパッケージ名を返す。build.sh の package_binary と揃える。
+// artex-<バージョン>-<os>-<arch>.zip（バージョン番号に v 接頭辞は付けない）。
 func AssetName(tag, goos, goarch string) string {
 	return fmt.Sprintf("artex-%s-%s-%s.zip", strings.TrimPrefix(tag, "v"), goos, goarch)
 }
 
-// FindAsset 在 Release 里按名字找资产。
+// FindAsset は Release の中を名前で資産を探す。
 func (r *Release) FindAsset(name string) (Asset, bool) {
 	for _, a := range r.Assets {
 		if strings.EqualFold(a.Name, name) {

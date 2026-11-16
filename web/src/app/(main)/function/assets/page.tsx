@@ -546,7 +546,7 @@ export default function AssetsPage() {
           </AssetCard>
         </TabsContent>
 
-        {/* 应用 */}
+        {/* アプリ */}
         <TabsContent value="app" className="mt-0 flex min-h-0 flex-1 flex-col gap-2">
           {searchBox}
           <AssetCard
@@ -586,7 +586,7 @@ export default function AssetsPage() {
           </AssetCard>
         </TabsContent>
 
-        {/* 服务 */}
+        {/* サービス */}
         <TabsContent value="service" className="mt-0 flex min-h-0 flex-1 flex-col gap-2">
           {searchBox}
           <AssetCard
@@ -964,8 +964,8 @@ function CompanyAvatar({ name, logo }: { name: string; logo?: string }) {
   );
 }
 
-// 后端返回的 warnings 说的是既有数据问题（不是本次提交的行有错），保存本身已经
-// 成功。给更长的停留时间，因为它需要用户去处理具体的资产，扫一眼标题不够。
+// バックエンドが返す warnings は既存データの問題を指す（今回送った行の誤りではない）。保存自体はすでに
+// 成功している。表示時間を長くする。ユーザーが具体的な資産を処理する必要があり、タイトルを見ただけでは足りない。
 function showScopeWarnings(warnings?: string[]) {
   for (const warning of warnings ?? []) {
     toast.warning(warning, { duration: 15000 });
@@ -984,7 +984,7 @@ function savedScopeText(company: Company): string {
     .join("\n");
 }
 
-// 新增企业使用与任务、LLM 编辑一致的右侧抽屉。
+// 企業の追加は、タスクと LLM の編集と同じ右側ドロワーを使う。
 function CompanyDialog({ onSaved }: { onSaved: () => void }) {
   const [open, setOpen] = React.useState(false);
   const [name, setName] = React.useState("");
@@ -1066,7 +1066,7 @@ function CompanyDialog({ onSaved }: { onSaved: () => void }) {
   );
 }
 
-// 编辑（覆盖）资产范围弹窗
+// 資産範囲を編集（上書き）するダイアログ
 function EditScopeDialog({ company, onSaved }: { company: Company; onSaved: () => void }) {
   const [open, setOpen] = React.useState(false);
   const [scopeText, setScopeText] = React.useState("");
@@ -1150,7 +1150,7 @@ function EditScopeDialog({ company, onSaved }: { company: Company; onSaved: () =
   );
 }
 
-// 追加资产范围弹窗
+// 資産範囲を追加するダイアログ
 function AppendScopeDialog({ company, onSaved }: { company: Company; onSaved: () => void }) {
   const [open, setOpen] = React.useState(false);
   const [scopeText, setScopeText] = React.useState("");

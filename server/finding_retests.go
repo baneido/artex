@@ -150,7 +150,7 @@ func (s *Server) findingRetestTools() []actool.CoreTool {
 					return actool.Errorf(err.Error()), nil
 				}
 				if r == nil {
-					return actool.Errorf("当前会话未关联复测记录，请从漏洞详情发起复测"), nil
+					return actool.Errorf("このセッションには再テスト記録が関連付けられていません。脆弱性の詳細から再テストを開始してください"), nil
 				}
 				var constraints []db.Constraint
 				f, err := s.m.pg.GetFinding(r.FindingID)
@@ -227,7 +227,7 @@ func (s *Server) seedFindingRetester() error {
 	if id > 0 {
 		var pid int64
 		if err = tx.QueryRow(`INSERT INTO agent_prompts(agent_id,version,template_text,note,updated_by)
-		VALUES ($1,1,$2,'内置默认','system') RETURNING id`, id, agent.RetesterDefaultPrompt).Scan(&pid); err != nil {
+		VALUES ($1,1,$2,'組み込みデフォルト','system') RETURNING id`, id, agent.RetesterDefaultPrompt).Scan(&pid); err != nil {
 			return err
 		}
 		if _, err = tx.Exec(`UPDATE agents SET current_prompt_id=$1 WHERE id=$2`, pid, id); err != nil {

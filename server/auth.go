@@ -22,19 +22,19 @@ const (
 	jwtTTL         = 7 * 24 * time.Hour
 	keyChars       = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
-	// 下限与 setup 页的前端校验一致——校验只放在前端等于没放，直接打 API 就能
-	// 绕过。上限是 bcrypt 的硬限制：超过 72 字节 GenerateFromPassword 会返回
-	// ErrPasswordTooLong，提前挡掉好过让用户收到一句含义不明的「密码加密失败」。
+	// 下限は setup ページのフロントの検証と揃える。検証をフロントだけに置くのは、置いていないのと同じで、API を直接呼べば
+	// 迂回できる。上限は bcrypt のハードな制限で、72 バイトを超えると GenerateFromPassword は
+	// ErrPasswordTooLong を返す。先に止めた方が、意味の分からない「パスワードの暗号化に失敗しました」をユーザーに返すよりよい。
 	minPasswordRunes = 8
 	maxPasswordBytes = 72
 )
 
-// errDataSourceUnavailable 是密码相关读操作失败时统一的回复。这些 handler 绝不能
-// 把"读不到"当成"没有设置"：authInit 曾因此在数据库报错时放行，让未认证请求覆盖
-// 掉已有的管理员密码。
+// errDataSourceUnavailable は、パスワードの読み取りに失敗したときの共通の応答である。これらの handler は
+// 「読めない」を「未設定」と扱ってはいけない。authInit は以前、データベースのエラーで通してしまい、未認証のリクエストが
+// 既存の管理者パスワードを上書きした。
 const errDataSourceUnavailable = "データソースを一時的に利用できません。しばらくしてから再試行してください"
 
-// validatePassword 返回空串表示通过，否则返回可直接展示给用户的中文原因。
+// validatePassword は、通るときは空文字を返し、それ以外はユーザーにそのまま見せられる日本語の理由を返す。
 func validatePassword(pw string) string {
 	if utf8.RuneCountInString(pw) < minPasswordRunes {
 		return fmt.Sprintf("パスワードは %d 文字以上で入力してください", minPasswordRunes)
@@ -60,7 +60,7 @@ func loadOrCreateJWTKey(keyDir, dataDir string) ([]byte, error) {
 			if data, rerr := os.ReadFile(legacy); rerr == nil {
 				if werr := os.WriteFile(path, data, 0o600); werr == nil {
 					_ = os.Remove(legacy)
-					log.Printf("[auth] JWT key 已从 %s 迁移到 %s（移出可浏览工作区）", legacy, path)
+					log.Printf("[auth] JWT key を %s から %s へ移しました（閲覧できる作業領域の外です）", legacy, path)
 				}
 			}
 		}
@@ -79,7 +79,7 @@ func loadOrCreateJWTKey(keyDir, dataDir string) ([]byte, error) {
 	if err := os.WriteFile(path, buf, 0600); err != nil {
 		return nil, fmt.Errorf("write jwt key: %w", err)
 	}
-	log.Printf("[auth] 新 JWT key 已写入 %s", path)
+	log.Printf("[auth] 新しい JWT key を %s に書き込みました", path)
 	return buf, nil
 }
 
@@ -138,9 +138,9 @@ func (s *Server) requireAuth(h http.Handler) http.Handler {
 }
 
 // GET /api/auth/status — reports whether the admin password has been initialised.
-// 读失败必须回 503 而不是 initialized:false：前端在 initialized:false 时会把用户
-// 送到 /setup 去设置密码（login/page.tsx），把数据库故障包装成 200 等于把用户往
-// 覆盖已有密码的路上推。
+// 読み取り失敗は initialized:false にせず 503 を返す。フロントは initialized:false のときユーザーを
+// /setup へ送りパスワードを設定させる（login/page.tsx）。データベース障害を 200 にすると、ユーザーを
+// 既存パスワードの上書きへ進めてしまう。
 func (s *Server) authStatus(w http.ResponseWriter, r *http.Request) {
 	pg := s.pg(w)
 	if pg == nil {
@@ -185,9 +185,9 @@ func (s *Server) authInit(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 500, "パスワードの暗号化に失敗しました")
 		return
 	}
-	// 用 INSERT ... ON CONFLICT DO NOTHING 而不是 upsert：上面那次 GetSetting 只是
-	// 快速失败路径，真正"仅首次可设"的保证落在主键约束上。bcrypt 要跑几十毫秒，
-	// 这期间别的请求完全可能先把密码设好，而读检查本身也可能因故障而失效。
+	// INSERT ... ON CONFLICT DO NOTHING を使う。upsert にはしない。上の GetSetting は
+	// 早く失敗させる経路にすぎない。本当に「初回だけ設定できる」保証は主キー制約にある。bcrypt は数十ミリ秒かかり、
+	// その間に別のリクエストが先にパスワードを設定できる。読み取りチェック自体も障害で効かなくなる。
 	inserted, err := pg.InsertSettingIfAbsent(authPassKey, string(hash))
 	if err != nil {
 		writeErr(w, 500, "保存に失敗しました: "+err.Error())

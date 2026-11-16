@@ -9,24 +9,24 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Finding asset tree — the「按资产」view of the global findings list.
+// Finding asset tree. 全体の検出事項一覧の「資産別」ビューである。
 //
-// 层级与 BuildCoverageGraph 同源(company → root_domain/ip/app → subdomain →
-// service → endpoint),但那份是「某个任务的范围内资产」的力导向图,这份是
-// 「全库有发现的资产」的树:只收有发现的资产及其祖先链,节点带子树聚合计数。
-// 两者的父子优先级规则必须保持一致,改一处请对照 task_scope.go 改另一处。
+// 階層は BuildCoverageGraph と同じ出自である（company から root_domain、ip、app、subdomain、
+// service、endpoint）。あちらは「あるタスクの範囲内の資産」の力指向図で、こちらは
+// 「ライブラリ全体で検出事項がある資産」の木である。検出事項がある資産とその祖先だけを入れ、ノードは部分木の集計を持つ。
+// 親子の優先規則は両方で一致させる。片方を変えたら task_scope.go のもう片方も合わせる。
 // ---------------------------------------------------------------------------
 
-// FindingUnassignedAsset 是「未关联资产」的节点 key,也是列表接口的筛选哨兵:
-// 命中 asset_ids 为空、或所指资产已被删除的发现。
+// FindingUnassignedAsset は「未関連付けの資産」のノード key で、一覧 API の絞り込みの番兵でもある。
+// asset_ids が空、または指す資産が削除済みの検出事項に当たる。
 const FindingUnassignedAsset = "__none__"
 
-// findingAssetTreeMaxNodes 是返回给前端的节点上限。超出时自底向上丢弃整层
-// (endpoint 优先,其次 service):它们的计数已经累加进父节点,丢节点不丢数字。
+// findingAssetTreeMaxNodes は画面へ返すノードの上限である。超えたときは下から層ごと捨てる
+// （endpoint を先に、次が service）。件数はすでに親ノードへ足してある。ノードを捨てても数字は捨てない。
 const findingAssetTreeMaxNodes = 3000
 
-// FindingAssetNode 是资产树的一个节点。Key 与覆盖图同构:资产行是 "a:<id>"、
-// 企业是 "c:<id>"、没有资产行的根域名是合成的 "r:<domain>"、未关联桶是 "__none__"。
+// FindingAssetNode は資産木のノード 1 つである。Key はカバー図と同じ形である。資産行は "a:<id>"、
+// 企業は "c:<id>"、資産行の無いルートドメインは合成した "r:<domain>"、未関連付けの桶は "__none__"。
 type FindingAssetNode struct {
 	Key       string `json:"key"`
 	Parent    string `json:"parent,omitempty"`
@@ -34,8 +34,8 @@ type FindingAssetNode struct {
 	Label     string `json:"label"`
 	AssetID   int64  `json:"asset_id,omitempty"`
 	CompanyID int64  `json:"company_id,omitempty"`
-	// Self 是直接挂在该资产上的发现数;Total 含全部子孙且按 finding 去重
-	// (一个发现挂多个资产时,只在共同祖先上计一次)。
+	// Self はその資産に直接付いた検出事項の数である。Total は子孫をすべて含み、finding で重複を除く
+	// （1 件の検出事項が複数の資産に付くとき、共通の祖先では 1 回だけ数える）。
 	Self        int       `json:"self"`
 	Total       int       `json:"total"`
 	Critical    int       `json:"critical"`
@@ -45,17 +45,17 @@ type FindingAssetNode struct {
 	LastFoundAt time.Time `json:"last_found_at"`
 }
 
-// FindingAssetTree 是整棵树的一次性快照。Nodes 已排好序:同一父节点下按发现数
-// 降序、标签升序,「未关联资产」恒在最后。
+// FindingAssetTree は木全体の一回きりのスナップショットである。Nodes は並び済みである。同じ親の下では検出事項の数の
+// 降順、ラベルの昇順。「未関連付けの資産」は常に最後である。
 type FindingAssetTree struct {
 	Nodes        []FindingAssetNode `json:"nodes"`
 	FindingTotal int                `json:"finding_total"`
-	// Truncated=true 表示为控制体积丢弃了 DroppedKinds 里的层级。
+	// Truncated=true は、体積を抑えるために DroppedKinds の階層を捨てたことを示す。
 	Truncated    bool     `json:"truncated"`
 	DroppedKinds []string `json:"dropped_kinds,omitempty"`
 }
 
-// assetRow 是构树需要的资产字段子集。
+// assetRow は木を組むのに必要な資産フィールドの部分集合である。
 type assetRow struct {
 	id          int64
 	kind        string
@@ -76,9 +76,9 @@ func (a *assetRow) coverageNode() CoverageGraphNode {
 	}
 }
 
-// label 复用覆盖图的标签规则(URL > domain > ip > app_name > root_domain),但没有
-// URL 的服务(SMB、非 HTTP 端口等)要补上端口:否则它的标签会和宿主 IP/域名那行
-// 一模一样,树上父子两行看起来完全重复。
+// label はカバー図のラベル規則を再利用する（URL、domain、ip、app_name、root_domain の順）。ただし
+// URL の無いサービス（SMB、HTTP 以外のポートなど）はポートを足す。足さないと、ラベルが宿主の IP やドメインの行と
+// 同じになり、木の親子 2 行が完全に重複して見える。
 func (a *assetRow) label() string {
 	if a.kind == "service" && a.url == "" {
 		if host, port := a.hostPort(); host != "" && port > 0 {
@@ -90,7 +90,7 @@ func (a *assetRow) label() string {
 	return coverageNodeLabel(&n)
 }
 
-// hostPort 与覆盖图一致:优先 domain,其次 URL 里的 host,最后 ip。
+// hostPort はカバー図と同じである。domain を先に、次に URL の host、最後に ip。
 func (a *assetRow) hostPort() (string, int) {
 	n := a.coverageNode()
 	return hostPortOf(&n)
@@ -120,21 +120,21 @@ func scanAssetRows(rows interface {
 	return out, rows.Err()
 }
 
-// findingAssetHit 是一条发现在构树阶段需要的最小信息。
+// findingAssetHit は、木を組む段階で検出事項 1 件に必要な最小の情報である。
 type findingAssetHit struct {
 	severity string
 	ts       time.Time
 	assetIDs []int64
 }
 
-// BuildFindingAssetTree 按当前筛选构建资产树。AssetScope 自身不参与(否则树会随
-// 选中节点塌缩成一条链)。
+// BuildFindingAssetTree は現在の絞り込みで資産木を組む。AssetScope 自身は参加しない（参加すると木が
+// 選択ノードに従って 1 本の鎖へ潰れる）。
 func (d *DB) BuildFindingAssetTree(f FindingFilter) (*FindingAssetTree, error) {
 	return d.buildFindingAssetTree(f, findingAssetTreeMaxNodes)
 }
 
-// buildFindingAssetTree 是带节点上限的内部实现。maxNodes<=0 表示不截断——解析
-// AssetScope 时必须用这个模式,否则被丢掉的 endpoint 会让子树 id 集合不全。
+// buildFindingAssetTree はノード上限付きの内部実装である。maxNodes<=0 は切り捨てない。
+// AssetScope を解くときはこのモードが要る。捨てた endpoint があると、部分木の id 集合が欠ける。
 func (d *DB) buildFindingAssetTree(f FindingFilter, maxNodes int) (*FindingAssetTree, error) {
 	f.AssetScope = ""
 	f.assetIDs, f.assetNone, f.assetMiss = nil, false, false
@@ -180,8 +180,8 @@ FROM findings f LEFT JOIN tasks t ON f.task_id = t.id`+where, args...)
 		return nil, err
 	}
 
-	// 计数:一条发现沿它每个资产的祖先链向上,收集去重后的 key 集合再逐个 +1,
-	// 所以父节点不会因为一条发现挂了多个子资产而重复计数。
+	// 集計。検出事項 1 件は、付いた各資産の祖先を上へたどり、重複を除いた key 集合を集めてから 1 ずつ足す。
+	// だから親ノードは、1 件の検出事項が複数の子資産に付いても重複して数えない。
 	unassigned := &FindingAssetNode{Key: FindingUnassignedAsset, Kind: "none", Label: "未関連付けの資産"}
 	touched := map[string]bool{}
 	for _, h := range hits {
@@ -223,7 +223,7 @@ FROM findings f LEFT JOIN tasks t ON f.task_id = t.id`+where, args...)
 	return tree, nil
 }
 
-// countFinding 把一条发现累加到节点上(总数 / 严重度分桶 / 最近发现时间)。
+// countFinding は検出事項 1 件をノードへ足す（総数、深刻度の区分、直近の検出時刻）。
 func countFinding(n *FindingAssetNode, h findingAssetHit) {
 	if n == nil {
 		return
@@ -244,8 +244,8 @@ func countFinding(n *FindingAssetNode, h findingAssetHit) {
 	}
 }
 
-// loadFindingAssetRows 读取命中的资产行,并逐轮补齐祖先(service 的宿主域名/IP、
-// 子域名的根域名)。祖先自身可能没有任何发现,但树需要它们才能成形。
+// loadFindingAssetRows は当たった資産行を読み、周回ごとに祖先を補う（service の宿主ドメインと IP、
+// サブドメインのルートドメイン）。祖先自身に検出事項が無くても、木が形になるには必要である。
 func (d *DB) loadFindingAssetRows(ids map[int64]bool) (map[int64]*assetRow, error) {
 	byID := map[int64]*assetRow{}
 	if len(ids) == 0 {
@@ -267,8 +267,8 @@ func (d *DB) loadFindingAssetRows(ids map[int64]bool) (map[int64]*assetRow, erro
 		byID[a.id] = a
 	}
 
-	// 每轮找出还缺父节点的宿主标识,批量补一层;层数固定(endpoint→service→
-	// subdomain/ip→root_domain),4 轮足够收敛。
+	// 各周回で、まだ親ノードが無い宿主の識別子を見つけ、一括で 1 層補う。層数は固定である（endpoint から service、
+	// subdomain と ip、root_domain）。4 周回で収束する。
 	for range 4 {
 		want := missingParents(byID)
 		if want.empty() {
@@ -285,20 +285,20 @@ func (d *DB) loadFindingAssetRows(ids map[int64]bool) (map[int64]*assetRow, erro
 	return byID, nil
 }
 
-// missingHosts 是一轮补齐里要去库里找的宿主标识,按目标资产类型分开。
+// missingHosts は、1 周回の補完で DB から探す宿主の識別子である。対象の資産種別ごとに分ける。
 type missingHosts struct {
-	services []string // endpoint 的宿主(找 service 行)
-	domains  []string // service/endpoint 的宿主域名(找 subdomain 行)
-	ips      []string // service/endpoint 的宿主 IP(找 ip 行)
-	roots    []string // 子域名的根域名(找 root_domain 行)
+	services []string // endpoint の宿主（service 行を探す）
+	domains  []string // service と endpoint の宿主ドメイン（subdomain 行を探す）
+	ips      []string // service と endpoint の宿主 IP（ip 行を探す）
+	roots    []string // サブドメインのルートドメイン（root_domain 行を探す）
 }
 
 func (m missingHosts) empty() bool {
 	return len(m.services) == 0 && len(m.domains) == 0 && len(m.ips) == 0 && len(m.roots) == 0
 }
 
-// missingParents 汇总还没被加载的宿主:service(供 endpoint 挂靠)、子域名/IP(供
-// service 与 endpoint 挂靠)与根域名(供子域名挂靠)。
+// missingParents は、まだ読んでいない宿主をまとめる。service（endpoint をぶら下げる）、サブドメインと IP（
+// service と endpoint をぶら下げる）、ルートドメイン（サブドメインをぶら下げる）。
 func missingParents(byID map[int64]*assetRow) missingHosts {
 	haveService := map[string]bool{}
 	haveDomain := map[string]bool{}
@@ -326,8 +326,8 @@ func missingParents(byID map[int64]*assetRow) missingHosts {
 		switch a.kind {
 		case "service", "endpoint":
 			host, _ := a.hostPort()
-			// endpoint 先找同宿主的 service;端口对不上的 service 会以 Total=0
-			// 被最终过滤掉,不会污染树。
+			// endpoint は先に同じ宿主の service を探す。ポートが合わない service は Total=0 になり、
+			// 最後に除かれる。木を汚さない。
 			if a.kind == "endpoint" && host != "" && !haveService[host] {
 				wantService[host] = true
 			}
@@ -366,7 +366,7 @@ func keysOf(m map[string]bool) []string {
 	return out
 }
 
-// isIPLiteral 粗判一个 host 是不是 IP 字面量(用于决定去 ip 还是 subdomain 表找宿主)。
+// isIPLiteral は、host が IP リテラルかを粗く判定する（宿主を ip と subdomain のどちらで探すかを決める）。
 func isIPLiteral(host string) bool {
 	if strings.Contains(host, ":") {
 		return true // IPv6
@@ -385,7 +385,7 @@ func isIPLiteral(host string) bool {
 	return strings.Count(host, ".") == 3
 }
 
-// loadAssetsByHost 按宿主标识批量补齐资产行,返回本轮新增的行数。
+// loadAssetsByHost は宿主の識別子で資産行を一括で補い、この周回で増えた行数を返す。
 func (d *DB) loadAssetsByHost(want missingHosts, byID map[int64]*assetRow) (int, error) {
 	added := 0
 	load := func(q string, arg []string) error {
@@ -428,8 +428,8 @@ WHERE a.type='root_domain' AND a.domain = ANY($1::text[])`, want.roots); err != 
 	return added, nil
 }
 
-// assembleFindingAssetNodes 把资产行变成节点并连上父子关系。父节点缺位时(库里
-// 根本没有那条根域名资产)合成 "r:<domain>" 占位节点,与覆盖图的处理一致。
+// assembleFindingAssetNodes は資産行をノードにし、親子をつなぐ。親ノードが無いとき（DB に
+// そのルートドメイン資産がそもそも無い）は "r:<domain>" のプレースホルダを合成する。カバー図と同じ扱いである。
 func (d *DB) assembleFindingAssetNodes(byID map[int64]*assetRow) (map[string]*FindingAssetNode, map[string]string) {
 	nodes := map[string]*FindingAssetNode{}
 	parentOf := map[string]string{}
@@ -466,7 +466,7 @@ func (d *DB) assembleFindingAssetNodes(byID map[int64]*assetRow) (map[string]*Fi
 		}
 	}
 
-	// 子域名的根域名在库里没有资产行时,合成一个占位根,免得子域名散成顶层。
+	// サブドメインのルートドメインに資産行が無いとき、プレースホルダの根を合成する。サブドメインが最上位に散らない。
 	for _, a := range byID {
 		if a.kind != "subdomain" || a.rootDomain == "" {
 			continue
@@ -513,8 +513,8 @@ func (d *DB) assembleFindingAssetNodes(byID map[int64]*assetRow) (map[string]*Fi
 	return nodes, parentOf
 }
 
-// attachCompanyNodes 给顶层资产(根域名 / IP / 应用)补企业父节点——只有资产确实
-// 归属了企业才会出现企业层,没归属的资产仍然自己就是顶层。
+// attachCompanyNodes は最上位の資産（ルートドメイン、IP、アプリ）に企業の親ノードを足す。資産が実際に
+// 企業へ属しているときだけ企業層が出る。属していない資産は、自分自身が最上位のままである。
 func (d *DB) attachCompanyNodes(nodes map[string]*FindingAssetNode, parentOf map[string]string) error {
 	want := map[int64]bool{}
 	for _, n := range nodes {
@@ -556,7 +556,7 @@ func (d *DB) attachCompanyNodes(nodes map[string]*FindingAssetNode, parentOf map
 			continue
 		}
 		if name == "" {
-			name = "企业 #" + strconv.FormatInt(id, 10)
+			name = "企業 #" + strconv.FormatInt(id, 10)
 		}
 		nodes[key] = &FindingAssetNode{Key: key, Kind: "company", Label: name, CompanyID: id}
 	}
@@ -577,8 +577,8 @@ func (d *DB) attachCompanyNodes(nodes map[string]*FindingAssetNode, parentOf map
 	return nil
 }
 
-// sortFindingAssetNodes 排序:发现多的在前,同数按标签;「未关联资产」恒在最后。
-// 前端按数组顺序挂子节点,所以只要同一父节点下的相对顺序正确即可。
+// sortFindingAssetNodes は並べる。検出事項が多いものを先にし、同数ならラベル順である。「未関連付けの資産」は常に最後である。
+// 画面は配列の順で子ノードをぶら下げる。同じ親の下の相対順が正しければ足りる。
 func sortFindingAssetNodes(nodes []FindingAssetNode) {
 	sort.SliceStable(nodes, func(i, j int) bool {
 		a, b := nodes[i], nodes[j]
@@ -592,8 +592,8 @@ func sortFindingAssetNodes(nodes []FindingAssetNode) {
 	})
 }
 
-// truncateFindingAssetTree 在节点过多时整层丢弃(先 endpoint 再 service)。计数已
-// 累加到父节点,丢的只是可展开的细节层级。
+// truncateFindingAssetTree はノードが多すぎるとき、層ごと捨てる（先に endpoint、次に service）。件数は
+// すでに親ノードへ足してある。捨てるのは展開できる詳細の階層だけである。
 func truncateFindingAssetTree(tree *FindingAssetTree, maxNodes int) {
 	if maxNodes <= 0 || len(tree.Nodes) <= maxNodes {
 		return
@@ -615,8 +615,8 @@ func truncateFindingAssetTree(tree *FindingAssetTree, maxNodes int) {
 	}
 }
 
-// applyAssetScope 把 AssetScope(节点 key)解析成可用于 SQL 的资产 id 集合。选中
-// 一个节点等于选中它的整棵子树,所以要先把树建出来再收集子孙。
+// applyAssetScope は AssetScope（ノード key）を、SQL に使える資産 id の集合へ解く。ノードを
+// 1 つ選ぶことは、その部分木全体を選ぶことである。先に木を組んでから子孫を集める。
 func (d *DB) applyAssetScope(f FindingFilter) (FindingFilter, error) {
 	scope := strings.TrimSpace(f.AssetScope)
 	f.assetIDs, f.assetNone, f.assetMiss = nil, false, false
@@ -627,7 +627,7 @@ func (d *DB) applyAssetScope(f FindingFilter) (FindingFilter, error) {
 		f.assetNone = true
 		return f, nil
 	}
-	// 不截断:被丢掉的 endpoint 同样要参与 id 收集,否则列表会少数据。
+	// 切り捨てない。捨てられた endpoint も id の収集に入れる。入れないと一覧の件数が減る。
 	tree, err := d.buildFindingAssetTree(f, 0)
 	if err != nil {
 		return f, err
@@ -639,7 +639,7 @@ func (d *DB) applyAssetScope(f FindingFilter) (FindingFilter, error) {
 		children[n.Parent] = append(children[n.Parent], n)
 	}
 	if _, ok := byKey[scope]; !ok {
-		// 选中的节点在当前筛选下已经不存在,结果应当为空而不是退化成不过滤。
+		// 選んだノードは現在の絞り込みではもう存在しない。結果は空であるべきで、フィルタ無しへ退化してはならない。
 		f.assetMiss = true
 		return f, nil
 	}
@@ -665,8 +665,8 @@ func (d *DB) applyAssetScope(f FindingFilter) (FindingFilter, error) {
 	return f, nil
 }
 
-// assetIDContainments 把资产 id 变成 jsonb 包含判断的右操作数集合,配合
-// idx_findings_asset_ids(GIN jsonb_path_ops)使用。
+// assetIDContainments は資産 id を、jsonb の包含判定の右オペランド集合にする。
+// idx_findings_asset_ids（GIN jsonb_path_ops）と組み合わせて使う。
 func assetIDContainments(ids []int64) []string {
 	out := make([]string, 0, len(ids))
 	for _, id := range ids {

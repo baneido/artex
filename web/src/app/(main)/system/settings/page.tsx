@@ -38,12 +38,12 @@ export default function SystemSettingsPage() {
   const [pyInterp, setPyInterp] = React.useState("");
   const [workers, setWorkers] = React.useState("3");
   const [savingWorkers, setSavingWorkers] = React.useState(false);
-  // 操作约束注入范围(默认都开)。
+  // 操作制約を注入する範囲（既定はすべてオン）。
   const [injectPlanner, setInjectPlanner] = React.useState(true);
   const [injectWorker, setInjectWorker] = React.useState(true);
-  // 实验功能:noa 上下文压缩(默认关)。
+  // 実験機能。noa のコンテキスト圧縮（既定はオフ）。
   const [noaCompaction, setNoaCompaction] = React.useState(false);
-  // 纯前端偏好：不走 /api/settings，直接读写 localStorage。
+  // フロントだけの好み。/api/settings は通さず、localStorage を直接読み書きする。
   const sendMode = useChatSendMode();
 
   const apply = React.useCallback((s: Settings) => {
@@ -261,10 +261,10 @@ export default function SystemSettingsPage() {
         <p className="text-muted-foreground text-sm">グローバルな実行時スイッチ</p>
       </div>
 
-      {/* 多列而非 grid：网络搜索卡片比其余高数倍，且高度随所选后端变化（brave/tavily
-          的 key 输入是条件渲染）。grid 会按最高的一张撑满整行、在旁边留下大片空白，
-          多列则自动按内容高度平衡填充。卡片间距靠 mb 而非 gap——多列布局下
-          column-gap 只管列间距，行间距要由子元素自己给。 */}
+      {/* grid ではなく複数カラムにする。Web 検索カードは他より数倍高く、選んだバックエンドで高さが変わる（brave/tavily
+          の key 入力は条件付きで描画する）。grid は一番高いカードで行全体を伸ばし、隣に大きな空白を残す。
+          複数カラムなら内容の高さで自動的に埋める。カード間隔は gap ではなく mb にする。複数カラムでは
+          column-gap は列間隔だけを決め、行間隔は子要素自身が付ける。 */}
       <div className="columns-1 gap-4 md:gap-6 lg:columns-2">
         <UpdateCard />
 

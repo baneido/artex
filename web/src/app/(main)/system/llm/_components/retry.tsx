@@ -1,13 +1,13 @@
 "use client";
 
-// LLM 重试配置的共用件：五层重试各自的「次数 + 间隔」。
+// LLM 再試行設定の共通部品。5層の再試行それぞれの「回数 + 間隔」。
 //
-// 五层从内到外：建连(SDK) → 空响应(SDK) → 同 provider 安全窗口 → 轮询熔断 → 意图重跑。
-// 前三层跟着端点走，所以每个模型配置都能覆盖全局默认；后两层是进程级的，只有全局一份。
+// 5層は内側から、接続確立（SDK）、空レスポンス（SDK）、同じ provider の安全窓、ローテーション遮断、インテント再実行。
+// 前の3層はエンドポイントに付くので、各モデル設定がグローバル既定を上書きできる。後ろの2層はプロセス単位で、グローバルに1つだけ。
 //
-// 所有输入都遵循同一套「留空 = 不配置」语义，与后端 db.RetryRule 一致：
-//   次数   空/0 = 用内置默认 | -1 = 关闭这层重试 | >0 = 用这个次数
-//   间隔   空/0 = 用这层原本的指数退避 | >0 = 改用这个固定毫秒间隔
+// 入力はすべて同じ「空のまま = 設定しない」という意味で、バックエンドの db.RetryRule と同じ。
+//   回数   空/0 は組み込み既定 | -1 はこの層の再試行をオフ | >0 はこの回数を使う
+//   間隔   空/0 はこの層本来の指数バックオフ | >0 はこの固定ミリ秒間隔に変える
 
 import * as React from "react";
 
@@ -34,19 +34,19 @@ const ZERO_POLICY: LLMRetryPolicy = {
 
 type LayerMeta = {
   title: string;
-  /** 这层重试发生在哪、由谁执行 */
+  /** この層の再試行がどこで、誰が実行するか */
   where: string;
-  /** 什么样的错误会走到这层——具体到状态码，别让人猜 */
+  /** どんなエラーがこの層へ来るか。ステータスコードまで書く。推測させない */
   trigger: string;
-  /** 长得像但【不】走这层的错误，省得填了没反应还以为是 bug */
+  /** 似ているがこの層へ【来ない】エラー。記入しても反応が無く、バグだと思わせないため */
   skips?: string;
   desc: string;
   attemptsLabel: string;
-  /** 次数留空时的默认值，用于占位符 */
+  /** 回数を空にしたときの既定値。プレースホルダ用 */
   defAttempts: number;
-  /** 间隔留空时的默认策略，用于占位符 */
+  /** 間隔を空にしたときの既定方針。プレースホルダ用 */
   defInterval: string;
-  /** 次数填 -1 的含义 */
+  /** 回数に -1 を入れたときの意味 */
   offHint: string;
 };
 
@@ -120,7 +120,7 @@ export const RETRY_LAYERS = {
 
 type LayerKey = keyof typeof RETRY_LAYERS;
 
-/** 毫秒的人话，只用于在输入框旁边回显，免得数零。 */
+/** ミリ秒を人が読める言い方にする。入力欄の横に出すだけで、ゼロを数えさせない。 */
 function humanMs(ms: number) {
   if (!Number.isFinite(ms) || ms <= 0) return "";
   if (ms < 1000) return `${ms}ms`;
@@ -128,7 +128,7 @@ function humanMs(ms: number) {
   return `${Number((ms / 60_000).toFixed(2))}min`;
 }
 
-/** 受控数字输入：空串 ↔ 0，中间态（"-"、"1e"）原样留在本地，不打扰父级。 */
+/** 制御された数値入力。空文字と 0 を対応させる。途中の状態（"-"、"1e"）はそのままローカルに残し、親を邪魔しない。 */
 function NumField({
   id,
   value,
@@ -143,8 +143,8 @@ function NumField({
   min: number;
 }) {
   const [text, setText] = React.useState(value === 0 ? "" : String(value));
-  // 父级换了一整套值（读取到策略、切换配置）时跟上；自己敲字时不会走到这里，
-  // 因为那时 value 已经等于本地文本 parse 后的结果。
+  // 親が一式の値を変えたとき（方針を読んだ、設定を切り替えた）追従する。自分で打っているときはここへ来ない。
+  // そのときは value がすでにローカルテキストを parse した結果と同じだから。
   React.useEffect(() => {
     const incoming = value === 0 ? "" : String(value);
     setText((cur) => (Number(cur || 0) === value ? cur : incoming));
@@ -166,7 +166,7 @@ function NumField({
   );
 }
 
-/** 一层重试的两个旋钮。idPrefix 用来在同一页出现多次时保住 label 的 htmlFor。 */
+/** 1層の再試行の2つのつまみ。idPrefix は同じページに複数出るとき、label の htmlFor を保つ。 */
 export function RetryRuleFields({
   layer,
   idPrefix,
@@ -178,7 +178,7 @@ export function RetryRuleFields({
   idPrefix: string;
   value: LLMRetryRule;
   onChange: (r: LLMRetryRule) => void;
-  /** true = 配置抽屉里的紧凑版：省掉展开说明，只留「什么错误会走到这层」这一句 */
+  /** true は設定ドロワーの詰め版。展開の説明を省き、「どんなエラーがこの層へ来るか」の1文だけ残す */
   compact?: boolean;
 }) {
   const meta = RETRY_LAYERS[layer];
@@ -190,7 +190,7 @@ export function RetryRuleFields({
           <Label className="text-sm">{meta.title}</Label>
           <span className="text-muted-foreground text-xs">{meta.where}</span>
         </div>
-        {/* 哪些错误会走到这层，具体到状态码——填了旋钮却看不到效果，多半是错误压根不落在这层。 */}
+        {/* どのエラーがこの層へ来るか。ステータスコードまで。つまみを入れても効果が見えないときは、そのエラーがそもそもこの層に来ていないことが多い。 */}
         <p className="text-muted-foreground text-xs">
           <span className="font-medium text-foreground">トリガー</span>：{meta.trigger}
         </p>
@@ -233,7 +233,7 @@ export function RetryRuleFields({
   );
 }
 
-/** 模型配置抽屉里的三层覆盖（跟着端点走的那三层）。 */
+/** モデル設定ドロワーの 3 段の上書き（エンドポイントに従う 3 段）。 */
 export function ProfileRetryFields({
   value,
   onChange,
@@ -266,7 +266,7 @@ export function ProfileRetryFields({
   );
 }
 
-/** 「重试与退避」tab：五层的全局默认值。 */
+/** 「再試行とバックオフ」タブ。5層のグローバル既定値。 */
 export function RetryPolicyPanel() {
   const [policy, setPolicy] = React.useState<LLMRetryPolicy>(ZERO_POLICY);
   const [loading, setLoading] = React.useState(true);
@@ -292,7 +292,7 @@ export function RetryPolicyPanel() {
     if (saving) return;
     setSaving(true);
     try {
-      // 后端会把越界值夹回区间并回传，直接用回传值刷新，所见即所存。
+      // バックエンドは範囲外の値を区間へ挟んで返し、返した値でそのまま更新する。見えているものが保存されたもの。
       const saved = await api.saveLLMRetryPolicy(policy);
       setPolicy({ ...ZERO_POLICY, ...saved });
       toast.success("保存しました。すぐに有効になります（実行中の呼び出しは古いパラメータのままです）");

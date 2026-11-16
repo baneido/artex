@@ -27,44 +27,44 @@ func Causef(code, short, format string, args ...any) *AbortCause {
 
 var (
 	// Task-level execution context.
-	AbortPausedByUser = cause("paused_by_user", "用户暂停了任务",
-		"用户通过任务控制接口（POST /api/tasks/{id}/control，action=pause）暂停了任务。本次 Planner/Worker 运行被主动取消；运行中的意图会退回 frontier(open)，恢复任务后重新领取并从头执行")
-	AbortPausedByOrchestrator = cause("paused_by_orchestrator", "编排 Agent 暂停了任务",
-		"编排 Agent 调用了 pause_task 工具暂停本任务。本次 Planner/Worker 运行被主动取消；运行中的意图会退回 frontier(open)，恢复后重新执行")
-	AbortTaskDeleted = cause("task_deleted", "任务被删除",
-		"任务正在删除（DELETE /api/tasks/{id}），删除屏障已取消该任务正在运行的 Planner、Worker 和主 Agent；本次运行结果不会再被使用")
-	AbortPausedOnReload = cause("paused_on_reload", "后端恢复了任务的暂停状态",
-		"后端启动时根据数据库中持久化的状态恢复了任务暂停。本次运行被取消；正常情况下恢复阶段没有正在运行的 Agent")
-	AbortGoalMet = cause("goal_met", "规划者判定任务目标已达成",
-		"规划者判定任务目标已达成并将任务置为 done，随后取消仍在运行的 Worker；这些意图会标记为 stopped，而不是失败")
-	AbortSettleDrainTimeout = cause("settle_drain_timeout", "任务超时收尾的等待时间已用尽",
-		"任务到达 timeout 后等待正在运行的 Worker 优雅收尾，但 90 秒 drain 宽限仍不足，因此执行硬取消；意图会标记为 exhausted，收尾阶段已经写入的事实和资产会保留")
+	AbortPausedByUser = cause("paused_by_user", "ユーザーがタスクを一時停止しました",
+		"ユーザーがタスク制御 API（POST /api/tasks/{id}/control、action=pause）でタスクを一時停止しました。今回の Planner/Worker 実行は明示的に取り消されます。実行中のインテントは frontier(open) に戻り、タスク再開後に取り直して最初から実行します")
+	AbortPausedByOrchestrator = cause("paused_by_orchestrator", "編成 Agent がタスクを一時停止しました",
+		"編成 Agent が pause_task ツールでこのタスクを一時停止しました。今回の Planner/Worker 実行は明示的に取り消されます。実行中のインテントは frontier(open) に戻り、再開後に再実行します")
+	AbortTaskDeleted = cause("task_deleted", "タスクが削除されています",
+		"タスクを削除中です（DELETE /api/tasks/{id}）。削除バリアが、そのタスクで実行中の Planner、Worker、メイン Agent を取り消しました。今回の実行結果はもう使われません")
+	AbortPausedOnReload = cause("paused_on_reload", "バックエンドがタスクの一時停止を復元しました",
+		"バックエンド起動時に、データベースへ永続化されていた状態からタスクの一時停止を復元しました。今回の実行は取り消されます。通常、復元の段階で実行中の Agent はありません")
+	AbortGoalMet = cause("goal_met", "プランナーがタスク目標の達成を判定しました",
+		"プランナーがタスク目標の達成を判定してタスクを done にし、その後も実行中の Worker を取り消しました。これらのインテントは失敗ではなく stopped になります")
+	AbortSettleDrainTimeout = cause("settle_drain_timeout", "タスクタイムアウト時の締めの待ち時間が尽きました",
+		"タスクが timeout に達したあと、実行中の Worker の締めを待ちましたが、90 秒の drain 猶予でも足りなかったため、強制取消を実行しました。インテントは exhausted になります。締めの段階で書き込んだ事実と資産は残します")
 
 	// Per-work context.
-	AbortKilledByPlanner = cause("killed_by_planner", "规划者终止了这条意图",
-		"规划者调用 kill_work 主动终止了这条意图，通常表示方向跑偏或已无继续价值；意图会标记为 stopped，不会自动重新领取")
-	AbortWorkPausedByUser = cause("work_paused_by_user", "用户暂停了这条 Worker 意图",
-		"用户暂停了正在运行的 Worker。本次调用被取消，意图转为 paused；已经登记的意图、事实、漏洞和活动记录全部保留，恢复后从头重新执行")
-	AbortWorkCancelledByUser = cause("work_cancelled_by_user", "用户删除了这条 Worker 意图",
-		"用户删除了正在运行的 Worker。本次调用被取消；Worker 退出写入区后，服务端按用户选择的删除模式处理该意图——假删除仅标记为已删除并保留全部产出，真删除会级联移除该意图及仅由它支撑的下游节点")
-	AbortWorkFinished = cause("work_finished", "Worker 已正常结束并释放 context",
-		"Worker 已正常结束，引擎在 detachWork 中释放其 context 资源。这不是运行中断；若它出现在中断消息中，说明取消与收场事件发生了竞态")
-	AbortPausedRaceGuard = cause("paused_race_guard", "任务暂停期间拒绝启动新运行",
-		"任务处于暂停状态时，引擎拒绝发出新的执行 context，用于防止 claim 与暂停之间的竞态导致 Worker 继续启动；已领取的意图会退回 frontier")
+	AbortKilledByPlanner = cause("killed_by_planner", "プランナーがこのインテントを終了しました",
+		"プランナーが kill_work でこのインテントを明示的に終了しました。方向が逸れた、または続ける価値がなくなった、という意味であることが多いです。インテントは stopped になり、自動では取り直しません")
+	AbortWorkPausedByUser = cause("work_paused_by_user", "ユーザーがこの Worker インテントを一時停止しました",
+		"ユーザーが実行中の Worker を一時停止しました。今回の呼び出しは取り消され、インテントは paused になります。登録済みのインテント、事実、脆弱性、アクティビティ記録はすべて残し、再開後は最初から再実行します")
+	AbortWorkCancelledByUser = cause("work_cancelled_by_user", "ユーザーがこの Worker インテントを削除しました",
+		"ユーザーが実行中の Worker を削除しました。今回の呼び出しは取り消されます。Worker が書き込み領域を出たあと、サーバーはユーザーが選んだ削除モードでこのインテントを処理します。仮削除は削除済みの印を付けるだけで、成果物はすべて残します。真の削除は、このインテントと、これだけが支えている下流ノードを連鎖して除きます")
+	AbortWorkFinished = cause("work_finished", "Worker は正常終了し context を解放しました",
+		"Worker は正常終了し、エンジンが detachWork でその context を解放しています。これは実行の中断ではありません。中断メッセージに出るなら、取消と片付けのイベントが競合しています")
+	AbortPausedRaceGuard = cause("paused_race_guard", "一時停止中は新しい実行を拒否します",
+		"タスクが一時停止中のとき、エンジンは新しい実行 context を出しません。claim と一時停止の競合で Worker が起動し続けるのを防ぐためです。取得済みのインテントは frontier に戻します")
 
 	// Main Agent and standalone conversation contexts.
-	AbortChatStoppedByUser = cause("chat_stopped_by_user", "用户停止了本轮对话",
-		"用户点击了停止，主动中止本轮主 Agent 或会话 Agent 运行。已经产生的活动记录会保留，可以继续发送下一条消息")
-	AbortChatPausedWithTask = cause("chat_paused_with_task", "任务暂停并中止了主 Agent 对话",
-		"用户暂停任务时，正在运行的主 Agent 对话也被同步取消。已经产生的活动记录会保留；恢复任务后不会自动重放本轮消息")
-	AbortChatTurnFinished = cause("chat_turn_finished", "本轮对话已正常结束并释放 context",
-		"本轮对话已正常结束，服务端正在释放该轮 context 资源。这不是运行中断；若它出现在中断消息中，说明取消与收场事件发生了竞态")
+	AbortChatStoppedByUser = cause("chat_stopped_by_user", "ユーザーがこの対話を停止しました",
+		"ユーザーが停止を押し、このラウンドのメイン Agent またはセッション Agent の実行を明示的に止めました。すでに生まれたアクティビティ記録は残ります。次のメッセージは送れます")
+	AbortChatPausedWithTask = cause("chat_paused_with_task", "タスク一時停止でメイン Agent の対話も止めました",
+		"ユーザーがタスクを一時停止したとき、実行中のメイン Agent の対話も同時に取り消しました。すでに生まれたアクティビティ記録は残ります。タスクを再開しても、このラウンドのメッセージは自動では再送しません")
+	AbortChatTurnFinished = cause("chat_turn_finished", "この対話は正常終了し context を解放しました",
+		"この対話は正常終了し、サーバーがそのラウンドの context を解放しています。これは実行の中断ではありません。中断メッセージに出るなら、取消と片付けのイベントが競合しています")
 
 	// Process-level and per-run hard backstop.
-	AbortShutdown = cause("shutdown", "后端进程正在关闭",
-		"后端进程收到 SIGINT 或 SIGTERM，正在重启、更新或关闭。所有运行中的 Agent 会被取消；重启后残留的 running 意图会重置为 open 并重新执行")
-	AbortRunHardTimeout = cause("run_hard_timeout", "单次运行的硬超时兜底已触发",
-		"单次运行超过软墙钟预算及额外宽限，说明模型请求或某个工具长时间没有返回，导致正常的回合边界收尾无法执行。请重点检查中断前最后一个未返回的工具调用")
+	AbortShutdown = cause("shutdown", "バックエンドプロセスが終了しています",
+		"バックエンドプロセスが SIGINT または SIGTERM を受け、再起動、アップデート、または終了の途中です。実行中の Agent はすべて取り消されます。再起動後、残った running のインテントは open に戻して再実行します")
+	AbortRunHardTimeout = cause("run_hard_timeout", "単発実行のハードタイムアウトが発動しました",
+		"単発の実行が、柔らかい壁時計予算と追加の猶予を超えました。モデル要求、またはいずれかのツールが長く結果を返さず、通常のターン境界での締めが実行できていません。中断前に最後まで結果を返していないツール呼び出しを重点的に確認してください")
 )
 
 // AbortReason resolves the named cause attached to a cancelled run context.
@@ -79,11 +79,11 @@ func AbortReason(ctx context.Context) (code, short, text string, ok bool) {
 	}
 	switch {
 	case errors.Is(c, context.DeadlineExceeded):
-		return "deadline_exceeded", "上游 context 到达 deadline",
-			"上游 context 到达 deadline，但设置方没有通过 WithTimeoutCause 附加具名原因: " + c.Error(), true
+		return "deadline_exceeded", "上流 context が deadline に達しました",
+			"上流 context が deadline に達しましたが、設定側は WithTimeoutCause で名前付きの理由を付けていません: " + c.Error(), true
 	case errors.Is(c, context.Canceled):
-		return "canceled_no_cause", "取消方未附加具名原因",
-			"上游 context 被取消，但取消方没有通过 context.WithCancelCause 附加具名原因；请在 agent/cancelcause.go 登记原因并接入该取消点", true
+		return "canceled_no_cause", "取消側が名前付きの理由を付けていません",
+			"上流 context は取り消されましたが、取消側は context.WithCancelCause で名前付きの理由を付けていません。agent/cancelcause.go に理由を登録し、その取消箇所へ接続してください", true
 	default:
 		return "other", firstLine(c.Error(), 80), c.Error(), true
 	}

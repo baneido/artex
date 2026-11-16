@@ -1,37 +1,37 @@
 import { fileURLToPath } from "node:url";
 
-// 静态导出：`NEXT_EXPORT=1 next build` 产出纯静态目录到 web/out，可直接丢进
-// nginx web 根目录运行。开发(next dev)不设该变量，保留 /api 反代与热更新。
+// 静的エクスポート。`NEXT_EXPORT=1 next build` は純静的ディレクトリを web/out に出し、
+// nginx の web ルートへそのまま置いて動かせる。開発（next dev）ではこの変数を付けず、/api のリバースプロキシとホットリロードを残す。
 const isExport = process.env.NEXT_EXPORT === "1";
-// Vercel demo：整站走 mock，无后端，无需 /api 反代。
+// Vercel demo。サイト全体を mock にし、バックエンドは無く、/api のリバースプロキシも要らない。
 const isMock = process.env.NEXT_PUBLIC_MOCK === "1";
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // 避免父目录的 lockfile 影响根目录推断及资源路径生成。
+  // 親ディレクトリの lockfile がルート判定とリソースパス生成に影響しないようにする。
   turbopack: { root: fileURLToPath(new URL(".", import.meta.url)) },
   reactCompiler: true,
-  // 允许从局域网 IP 访问 dev 资源（HMR），按需增删。
-  // dev 阶段放开任意 IPv4 来源访问 /_next/* 与 HMR（局域网 IP 变动也不受影响）。
-  // 注意：Next 出于安全禁止裸 "*"，需用分段通配；"*.*.*.*" 匹配任意 IPv4。
+  // ローカルネットワークの IP から dev リソース（HMR）へアクセスできるようにする。必要に応じて増減する。
+  // dev では任意の IPv4 からの /_next/* と HMR を許可する（ローカルネットワークの IP が変わっても影響しない）。
+  // 注意。Next は安全のため裸の "*" を禁じており、セグメント単位のワイルドカードが要る。"*.*.*.*" は任意の IPv4 に一致する。
   allowedDevOrigins: ["*.*.*.*"],
   compiler: {
     removeConsole: process.env.NODE_ENV === "production",
   },
   ...(isExport
     ? {
-        // 纯静态导出：无 Node 运行时；图片不经优化；每个路由产出 <route>/index.html。
+        // 純静的エクスポート。Node ランタイムは無い。画像は最適化しない。各ルートは <route>/index.html を出す。
         output: "export",
         images: { unoptimized: true },
         trailingSlash: true,
       }
     : isMock
       ? {
-          // Vercel mock demo：无后端，不需要 /api 反代。
+          // Vercel mock demo。バックエンドは無く、/api のリバースプロキシは要らない。
           images: { unoptimized: true },
         }
       : {
-          // 开发：把 /api/* 反代到 Go 后端（默认 :8787，可用 AUTOPENTEST_API 覆盖）。
+          // 開発。/api/* を Go バックエンドへプロキシする（既定 :8787。AUTOPENTEST_API で上書きできる）。
           async rewrites() {
             const backend = process.env.AUTOPENTEST_API ?? "http://localhost:8787";
             return [{ source: "/api/:path*", destination: `${backend}/api/:path*` }];

@@ -1,48 +1,50 @@
 #!/usr/bin/env bash
 # =============================================================================
-# ARTEX 管理员密码重置脚本
+# ARTEX 管理者パスワードのリセットスクリプト
 #
-# 登录用户名固定为 ARTEX；密码以 bcrypt 哈希存放在数据库 settings 表的
-# auth.password_hash 键。本脚本连上数据库后，用 pgcrypto 在库内生成 bcrypt 哈希
-# 并写回该键——与后端登录校验（golang.org/x/crypto/bcrypt）完全兼容。
+# ログインのユーザー名は ARTEX で固定です。パスワードは bcrypt ハッシュとして
+# データベース settings テーブルの auth.password_hash キーに置きます。
+# このスクリプトはデータベースへ接続し、pgcrypto でライブラリ内に bcrypt ハッシュを作り、
+# そのキーへ書き戻します。バックエンドのログイン検証（golang.org/x/crypto/bcrypt）と互換です。
 #
-# 两种部署：
-#   local （默认）—— 宿主机直接用 psql 连数据库。连接信息按以下优先级获取：
-#                    命令行参数 > --dsn/$ARTEX_PG_DSN > config.json 的 database.*
-#   docker        —— 通过 `docker compose exec`（或 `docker exec`）在 postgres
-#                    容器内执行 psql（compose 默认不对宿主暴露 5432，故走容器内）。
+# デプロイは二通りです。
+#   local （既定）: ホストから psql で直接接続します。接続情報の優先順位は次のとおりです。
+#                    コマンド引数 > --dsn/$ARTEX_PG_DSN > config.json の database.*
+#   docker        : `docker compose exec`（または `docker exec`）で postgres
+#                    コンテナ内の psql を実行します（compose は既定でホストへ 5432 を出さないため、コンテナ内を使います）。
 #
-# 用法示例：
-#   ./reset-password.sh                          # 本地，自动读 config.json/环境，交互输入新密码
-#   ./reset-password.sh -p 'NewPass!'            # 本地，直接给定新密码
+# 使い方の例:
+#   ./reset-password.sh                          # ローカル。config.json か環境を自動で読み、新しいパスワードを対話入力する
+#   ./reset-password.sh -p 'NewPass!'            # ローカル。新しいパスワードを直接指定する
 #   ./reset-password.sh --dsn postgres://u:p@h:5432/artex
 #   ./reset-password.sh -H 127.0.0.1 -P 5433 -U autopentest -W pass -d artex
-#   ./reset-password.sh -m docker                # docker 部署（读 .env 的 POSTGRES_*）
-#   ./reset-password.sh -m docker -c pg容器名 --exec docker
+#   ./reset-password.sh -m docker                # docker デプロイ（.env の POSTGRES_* を読む）
+#   ./reset-password.sh -m docker -c pgコンテナ名 --exec docker
 #
-# 安全：新密码经环境变量 + psql \getenv 传入（不进入进程 argv），并用 :'var'
-# 自动转义（防 SQL 注入）；数据库密码经 PGPASSWORD 传递，同样不进 argv。
+# 安全: 新しいパスワードは環境変数と psql の \getenv で渡します（プロセスの argv には入りません）。
+# :'var' で自動エスケープします（SQL インジェクションを防ぎます）。データベースのパスワードは
+# PGPASSWORD で渡し、同じく argv には入りません。
 # =============================================================================
 set -euo pipefail
 
 PASS_KEY="auth.password_hash"
 BCRYPT_COST=10
 
-MODE=""            # local | docker（空=自动判定）
+MODE=""            # local | docker（空なら自動判定）
 DSN=""
 HOST="" PORT="" USER="" DBPASS="" DBNAME="" SSLMODE=""
 CONFIG=""
-CONTAINER=""       # docker 模式的 postgres 服务/容器名（默认 postgres）
-EXEC_KIND=""       # compose | docker（docker 模式下用哪种 exec；空=自动）
+CONTAINER=""       # docker モードの postgres サービス名またはコンテナ名（既定は postgres）
+EXEC_KIND=""       # compose | docker（docker モードで使う exec。空なら自動）
 NEWPASS=""
 ASSUME_YES=0
 
-die() { echo "错误：$*" >&2; exit 1; }
+die() { echo "エラー: $*" >&2; exit 1; }
 info() { echo "· $*" >&2; }
 
 usage() { sed -n '2,40p' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
 
-# ---- 参数解析 -------------------------------------------------------------
+# ---- 引数の解析 -------------------------------------------------------------
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -m|--mode)        MODE="${2:-}"; shift 2 ;;
@@ -59,12 +61,12 @@ while [[ $# -gt 0 ]]; do
     -p|--new-password) NEWPASS="${2:-}"; shift 2 ;;
     -y|--yes)         ASSUME_YES=1; shift ;;
     -h|--help)        usage ;;
-    *) die "未知参数：$1（-h 查看用法）" ;;
+    *) die "不明な引数です: $1（使い方は -h）" ;;
   esac
 done
 
-# ---- 从 config.json 读取 database.*（仅 local 模式、且未显式给出连接时）-----
-# 优先用 python3 解析（健壮）；缺 python3 时退回 grep（config.json 为规整分字段）。
+# ---- config.json の database.* を読む（local モードで、接続を明示していないときだけ）-----
+# python3 での解析を優先する（堅い）。python3 が無いときは grep に戻る（config.json はフィールドごとに整っている）。
 read_config_json() {
   local path="$1"
   [[ -f "$path" ]] || return 1
@@ -75,7 +77,7 @@ try:
     d = json.load(open(sys.argv[1])).get("database", {})
 except Exception:
     sys.exit(1)
-# 支持直接给 dsn，或分字段
+# dsn を直接渡すか、フィールドごとに渡す
 if d.get("dsn"):
     print("DSN\t" + d["dsn"]); sys.exit(0)
 for k in ("host","port","user","password","dbname","sslmode"):
@@ -83,7 +85,7 @@ for k in ("host","port","user","password","dbname","sslmode"):
         print(k.upper() + "\t" + str(d[k]))
 PY
   else
-    # 极简后备：逐键 grep（值为字符串或数字）
+    # 最小限の予備。キーごとに grep する（値は文字列か数値）
     local k
     for k in host port user password dbname sslmode; do
       local v
@@ -110,7 +112,7 @@ apply_config_fields() {
   done
 }
 
-# ---- 自动判定模式 ---------------------------------------------------------
+# ---- モードの自動判定 ---------------------------------------------------------
 if [[ -z "$MODE" ]]; then
   if [[ -n "$DSN$HOST$USER$DBNAME" || -n "${ARTEX_PG_DSN:-}" || -f "${CONFIG:-config.json}" ]]; then
     MODE="local"
@@ -120,22 +122,23 @@ if [[ -z "$MODE" ]]; then
     MODE="local"
   fi
 fi
-info "部署模式：$MODE"
+info "デプロイ方式: $MODE"
 
-# ---- 采集新密码 -----------------------------------------------------------
+# ---- 新しいパスワードの入力 -----------------------------------------------------------
 if [[ -z "$NEWPASS" ]]; then
-  read -r -s -p "输入新密码（用户名固定为 ARTEX）：" NEWPASS; echo >&2
-  [[ -n "$NEWPASS" ]] || die "密码不能为空"
-  read -r -s -p "再次输入以确认：" NEWPASS2; echo >&2
-  [[ "$NEWPASS" == "$NEWPASS2" ]] || die "两次输入不一致"
+  read -r -s -p "新しいパスワードを入力してください（ユーザー名は ARTEX で固定です）: " NEWPASS; echo >&2
+  [[ -n "$NEWPASS" ]] || die "パスワードは空にできません"
+  read -r -s -p "確認のためもう一度入力してください: " NEWPASS2; echo >&2
+  [[ "$NEWPASS" == "$NEWPASS2" ]] || die "2 回の入力が一致しません"
 fi
-[[ -n "$NEWPASS" ]] || die "密码不能为空"
+[[ -n "$NEWPASS" ]] || die "パスワードは空にできません"
 
-# 通过环境变量把密码交给 psql（\getenv 读取，不进入 argv/ps）
+# 環境変数でパスワードを psql に渡す（\getenv が読む。argv や ps には出ない）
 export ARTEX_RESET_NEWPASS="$NEWPASS"
 
-# 库内生成 bcrypt 并 upsert；密码用 :'newpw' 自动转义。CREATE EXTENSION 幂等，
-# 若数据库角色无建扩展权限会在此报错（提示见下方 run 的失败分支）。
+# ライブラリ内で bcrypt を作り upsert する。パスワードは :'newpw' で自動エスケープする。
+# CREATE EXTENSION は冪等である。データベースロールに拡張を作る権限が無いと、ここで失敗する
+# （案内は下の run の失敗分岐を参照）。
 SQL=$(cat <<SQL
 \\set ON_ERROR_STOP on
 \\getenv newpw ARTEX_RESET_NEWPASS
@@ -146,29 +149,29 @@ ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now();
 SQL
 )
 
-# ---- 执行 -----------------------------------------------------------------
+# ---- 実行 -----------------------------------------------------------------
 if [[ "$MODE" == "local" ]]; then
-  # 连接信息优先级：命令行 > --dsn/$ARTEX_PG_DSN > config.json
+  # 接続情報の優先順位: コマンド引数 > --dsn/$ARTEX_PG_DSN > config.json
   if [[ -z "$DSN" && -z "$HOST$USER$DBNAME" ]]; then
     [[ -n "${ARTEX_PG_DSN:-}" ]] && DSN="$ARTEX_PG_DSN"
   fi
   if [[ -z "$DSN" && -z "$HOST$USER$DBNAME" ]]; then
     cfg="${CONFIG:-config.json}"
     if [[ -f "$cfg" ]]; then
-      info "从 $cfg 读取数据库配置"
+      info "データベース設定を $cfg から読みました"
       apply_config_fields < <(read_config_json "$cfg")
     fi
   fi
 
-  command -v psql >/dev/null 2>&1 || die "本机未找到 psql（请安装 postgresql-client，或改用 -m docker）"
+  command -v psql >/dev/null 2>&1 || die "このマシンに psql がありません。postgresql-client を入れるか、-m docker を使ってください"
 
   declare -a PSQL_ARGS=()
   if [[ -n "$DSN" ]]; then
     PSQL_ARGS=("$DSN")
     target="$DSN"
   else
-    [[ -n "$USER"   ]] || die "缺少数据库用户（-U）或有效的 config.json/DSN"
-    [[ -n "$DBNAME" ]] || die "缺少数据库名（-d）或有效的 config.json/DSN"
+    [[ -n "$USER"   ]] || die "データベースのユーザーがありません（-U、または有効な config.json / DSN）"
+    [[ -n "$DBNAME" ]] || die "データベース名がありません（-d、または有効な config.json / DSN）"
     HOST="${HOST:-127.0.0.1}"; PORT="${PORT:-5432}"; SSLMODE="${SSLMODE:-disable}"
     PSQL_ARGS=(-h "$HOST" -p "$PORT" -U "$USER" -d "$DBNAME")
     [[ -n "$SSLMODE" ]] && export PGSSLMODE="$SSLMODE"
@@ -176,22 +179,22 @@ if [[ "$MODE" == "local" ]]; then
     target="$USER@$HOST:$PORT/$DBNAME"
   fi
 
-  info "目标数据库：$target"
+  info "対象データベース: $target"
   if [[ "$ASSUME_YES" -ne 1 ]]; then
-    read -r -p "确认在该库重置 ARTEX 密码？[y/N] " ans
-    [[ "$ans" == "y" || "$ans" == "Y" ]] || die "已取消"
+    read -r -p "このデータベースで ARTEX のパスワードをリセットしますか？ [y/N] " ans
+    [[ "$ans" == "y" || "$ans" == "Y" ]] || die "中止しました"
   fi
 
   if ! printf '%s\n' "$SQL" | psql "${PSQL_ARGS[@]}" -v ON_ERROR_STOP=1 -q >/dev/null; then
-    die "写入失败。若报 pgcrypto 权限/缺失，请用具备建扩展权限的角色，或先手动执行 CREATE EXTENSION pgcrypto。"
+    die "書き込みに失敗しました。pgcrypto の権限がない、または拡張が無い場合は、拡張を作成できるロールを使うか、先に CREATE EXTENSION pgcrypto を実行してください。"
   fi
 
 else
   # ---- docker ----
-  command -v docker >/dev/null 2>&1 || die "未找到 docker"
+  command -v docker >/dev/null 2>&1 || die "docker が見つかりません"
   CONTAINER="${CONTAINER:-postgres}"
 
-  # 选择 exec 方式：优先 docker compose exec（服务名），否则 docker exec（容器名）
+  # exec の選び方: docker compose exec（サービス名）を優先し、なければ docker exec（コンテナ名）
   if [[ -z "$EXEC_KIND" ]]; then
     if docker compose version >/dev/null 2>&1 && [[ -f docker-compose.yml ]]; then
       EXEC_KIND="compose"
@@ -200,7 +203,7 @@ else
     fi
   fi
 
-  # 容器内的 psql 凭据：优先命令行，其次 .env 的 POSTGRES_*，再退回 compose 默认(artex)
+  # コンテナ内 psql の資格情報: コマンド引数を優先し、次に .env の POSTGRES_*、その次に compose の既定（artex）
   if [[ -f .env ]]; then
     # shellcheck disable=SC1091
     set -a; . ./.env; set +a
@@ -210,13 +213,13 @@ else
   [[ -n "$DBPASS" ]] && export PGPASSWORD="$DBPASS"
   [[ -z "${PGPASSWORD:-}" && -n "${POSTGRES_PASSWORD:-}" ]] && export PGPASSWORD="$POSTGRES_PASSWORD"
 
-  info "目标：容器 $CONTAINER 内 psql -U $DUSER -d $DNAME（exec=$EXEC_KIND）"
+  info "対象: コンテナ $CONTAINER 内の psql -U $DUSER -d $DNAME（exec=$EXEC_KIND）"
   if [[ "$ASSUME_YES" -ne 1 ]]; then
-    read -r -p "确认在该容器数据库重置 ARTEX 密码？[y/N] " ans
-    [[ "$ans" == "y" || "$ans" == "Y" ]] || die "已取消"
+    read -r -p "このコンテナのデータベースで ARTEX のパスワードをリセットしますか？ [y/N] " ans
+    [[ "$ans" == "y" || "$ans" == "Y" ]] || die "中止しました"
   fi
 
-  # -e 只带名字不带值 → 从当前环境继承，密码不出现在 docker 命令 argv 里。
+  # -e は名前だけで値を付けない。現在の環境から継承し、パスワードは docker コマンドの argv に出ない。
   declare -a EXEC_CMD
   if [[ "$EXEC_KIND" == "compose" ]]; then
     EXEC_CMD=(docker compose exec -T -e ARTEX_RESET_NEWPASS -e PGPASSWORD "$CONTAINER"
@@ -227,9 +230,9 @@ else
   fi
 
   if ! printf '%s\n' "$SQL" | "${EXEC_CMD[@]}" >/dev/null; then
-    die "写入失败。请确认容器名（-c）、数据库账号（.env 的 POSTGRES_*），以及角色有 pgcrypto 权限。"
+    die "書き込みに失敗しました。コンテナ名（-c）、データベースアカウント（.env の POSTGRES_*）、ロールの pgcrypto 権限を確認してください。"
   fi
 fi
 
 unset ARTEX_RESET_NEWPASS
-echo "✓ 已重置 ARTEX 管理员密码。请用用户名 ARTEX + 新密码登录（无需重启服务）。"
+echo "✓ ARTEX 管理者パスワードをリセットしました。ユーザー名 ARTEX と新しいパスワードでログインしてください（サービスの再起動は不要です）。"

@@ -163,25 +163,25 @@ function mergeBySeq(current: Activity[], incoming: Activity[]): Activity[] {
 }
 
 // statusIcon maps a session status to its icon. Worker terminal states are
-// distinct & color-coded: 完成(绿勾圈) / 取消停止(琥珀斜杠圈) / 出错(红叉圈) /
-// 步数耗尽(紫). running=蓝色转圈, pending(待领取)=灰时钟.
+// distinct & color-coded: 完了（緑のチェック円） / 取消停止（琥珀のスラッシュ円） / エラー（赤のバツ円） /
+// ステップ枯渇（紫）。running は青い回転、pending（受け取り待ち）は灰色の時計。
 function statusIcon(status: SessionStatus) {
   switch (status) {
-    case "running": // 执行中
+    case "running": // 実行中
       return <Loader2Icon className="size-3.5 animate-spin text-blue-500" />;
     case "paused":
       return <PauseIcon className="size-3.5 text-amber-500" />;
-    case "pending": // 待领取(open intent)
+    case "pending": // 受け取り待ち（open intent）
       return <ClockIcon className="size-3.5 text-muted-foreground" />;
-    case "done": // 完成
+    case "done": // 完了
       return <CircleCheckIcon className="size-3.5 text-emerald-500" />;
-    case "stopped": // 取消/停止(被 planner 终止)
+    case "stopped": // 取消または停止（planner が止めた）
       return <CircleSlashIcon className="size-3.5 text-amber-500" />;
-    case "blocked": // 出错
+    case "blocked": // エラー
       return <CircleXIcon className="size-3.5 text-red-500" />;
-    case "exhausted": // 步数耗尽(撞 max_turns)
+    case "exhausted": // ステップ枯渇（max_turns に達した）
       return <ZapOffIcon className="size-3.5 text-violet-500" />;
-    case "deleted": // 用户假删除
+    case "deleted": // ユーザーの論理削除
       return <CircleSlashIcon className="size-3.5 text-muted-foreground" />;
   }
 }
@@ -244,7 +244,7 @@ const roleMeta = {
 // dedicated backend "sessions" endpoint — it is a fixed UI affordance whose
 // transcript is the main-agent activity stream (worker="mainagent") for the task.
 // A main-agent session is one resettable conversation segment. Segment 0 is the
-// original session; "新建会话" creates further segments (seq 1,2,…) so the agent
+// original session; "新規セッション" creates further segments (seq 1,2,…) so the agent
 // starts on a clean transcript while the task's graph/assets/goal stay shared. Each
 // segment is a switchable UI session; only the current (highest) one is writable.
 const mainSessionId = (seg: number) => `s-main-${seg}`;
@@ -309,9 +309,9 @@ function intentStatus(state: string): SessionStatus {
       return "stopped";
     case "paused":
       return "paused";
-    case "open": // 待领取，区别于执行中
+    case "open": // 受け取り待ち。実行中とは分ける
       return "pending";
-    case "deleted": // 用户假删除
+    case "deleted": // ユーザーの論理削除
       return "deleted";
     default: // running
       return "running";
@@ -369,7 +369,7 @@ function SessionItem({
     s.role === "worker" &&
     !s.inherited &&
     !deleted &&
-    // pending = 待领(open)意图;连同运行中/已暂停都允许删除。
+    // pending は受け取り待ち（open）のインテント。実行中と一時停止中も一緒に削除できる。
     (s.status === "running" || s.status === "paused" || s.status === "pending");
   return (
     <div
@@ -515,9 +515,9 @@ export function SessionsTab({ taskId }: { taskId: string }) {
   const [currentSeg, setCurrentSeg] = React.useState(0);
   const [creatingMain, setCreatingMain] = React.useState(false);
   const [confirmNewMain, setConfirmNewMain] = React.useState(false);
-  // 手机端（<lg）会话列表默认折叠：屏幕高度本就紧张，列表若固定占掉 10~15rem，
-  // 下方的会话记录会被挤到只剩标题与输入框。折叠后记录区拿到几乎全部高度，
-  // 点标题栏可展开选会话，选完自动收起。桌面端不受影响（lg 起始终展开）。
+  // スマホ（<lg）ではセッション一覧を既定で畳む。画面の高さがもともと足りず、一覧が 10〜15rem を固定で取ると、
+  // 下のセッション記録はタイトルと入力欄だけになる。畳むと記録領域がほぼ全高を取り、
+  // タイトルバーを押すと展開してセッションを選べ、選び終わると自動で畳む。デスクトップは影響しない（lg 以上は常に展開）。
   const [listOpen, setListOpen] = React.useState(false);
   // Per-session lazily-loaded caches, keyed by session_key (main | plan | intent:<id>).
   const [store, setStore] = React.useState<SessionStore>({});
@@ -536,12 +536,12 @@ export function SessionsTab({ taskId }: { taskId: string }) {
   const [controllingIntent, setControllingIntent] = React.useState<string | null>(null);
   const [cancelIntent, setCancelIntent] = React.useState<Session | null>(null);
   const [cancelReason, setCancelReason] = React.useState("");
-  // 删除模式:soft=假删除(默认,置 deleted + 记原因,保留数据)| hard=真删除(级联移除独占子孙)。
+  // 削除モード。soft は論理削除（既定。deleted にして理由を残し、データは残す）| hard は物理削除（専有する子孫を連鎖して取り除く）。
   const [deleteMode, setDeleteMode] = React.useState<"soft" | "hard">("soft");
   const [workerMessage, setWorkerMessage] = React.useState("");
   const [workerMessageRequestId, setWorkerMessageRequestId] = React.useState("");
   const [workerMessageSending, setWorkerMessageSending] = React.useState(false);
-  // 方式1 文件上传:选好的附件(已落到任务工作目录 uploads/),随下条消息一起发。
+  // 方式1 ファイルアップロード。選んだ添付（タスク作業ディレクトリ uploads/ に置済み）は、次のメッセージと一緒に送る。
   const [attachments, setAttachments] = React.useState<ChatAttachment[]>([]);
   const [uploading, setUploading] = React.useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
@@ -609,14 +609,14 @@ export function SessionsTab({ taskId }: { taskId: string }) {
           patchIntentState(session.intent_id, "open");
           toast.success(`Worker #${session.intent_id} を再開しました。再取得を待っています`);
         } else if (mode === "hard") {
-          // 真删除:意图及独占下游已物理移除,从列表剔除该行。
+          // 物理削除。インテントと専有する下流は物理的に取り除き、一覧からその行を外す。
           patchIntentState(session.intent_id);
           const d = res.deleted;
           const extra = d ? `（インテント ${d.intents} / 事実 ${d.facts} / 脆弱性 ${d.findings} を含む）` : "";
           toast.success(`Worker #${session.intent_id} とその専有の下流を完全に削除しました${extra}`);
           setCancelReason("");
         } else {
-          // 假删除:意图置 deleted、记录删除原因,保留节点与产出。
+          // 論理削除。インテントを deleted にし、削除理由を残し、ノードと成果は残す。
           patchIntentState(session.intent_id, "deleted");
           toast.success(
             `Worker #${session.intent_id} を削除しました（理由を記録済み。プランナーがそれをもとに再計画します）`,
@@ -1162,7 +1162,7 @@ export function SessionsTab({ taskId }: { taskId: string }) {
     for (const node of allIntents) {
       let title = `Intent ${node.id}`;
       let parsedPayload: unknown = node.payload;
-      // 假删除:意图 state='deleted',删除原因在独立字段 delete_reason 上。
+      // 論理削除。インテントの state は 'deleted'。削除理由は独立したフィールド delete_reason にある。
       const deleted = node.state === "deleted";
       const deleteReason = node.delete_reason ?? "";
       if (node.payload) {
@@ -1286,8 +1286,8 @@ export function SessionsTab({ taskId }: { taskId: string }) {
   const activeSettled =
     !!activeLast && (activeLast.kind === "result" || (activeLast.kind === "text" && activeLast.is_error));
   const mainBusy = isMain && (sending || (!activeSettled && (mainChatRunning ?? recentLive(activeKey))));
-  // 折叠态（手机端）标题栏要替代整张列表：显示当前会话名 + 其它会话的未读合计，
-  // 否则收起后既不知道自己在看哪个会话，也看不到别处有新消息。
+  // 畳んだ状態（スマホ）のタイトルバーは一覧全体の代わりになる。現在のセッション名と、ほかのセッションの未読合計を出す。
+  // そうしないと、畳んだあと自分がどのセッションを見ているか分からず、ほかに新しいメッセージがあることも見えない。
   const activeDisplayTitle = (active.role === "worker" ? sessionMeta.get(active.id)?.title : "") || active.title;
   const hiddenUnread = React.useMemo(
     () => Object.entries(store).reduce((sum, [key, s]) => (key === activeKey ? sum : sum + s.unread), 0),
@@ -1553,7 +1553,7 @@ export function SessionsTab({ taskId }: { taskId: string }) {
   }
 
   const mainLoaded = !!store[currentMainKey]?.loaded;
-  // 发送键位由系统设置决定（localStorage），默认 Enter 发送。
+  // 送信キーはシステム設定で決まる（localStorage）。既定は Enter で送信。
   const sendMode = useChatSendMode();
   // What the transcript pane should show for the active session.
   const showLoader = !activeState || (activeState.loading && !activeState.loaded);
@@ -1569,9 +1569,9 @@ export function SessionsTab({ taskId }: { taskId: string }) {
 
   return (
     <TooltipProvider delayDuration={300}>
-      {/* 高度预留：页面头部（标题行 + 目标 + Tabs ≈ 7.5rem）+ 内容内边距。手机端 p-4、
-        桌面端 lg:p-6，且桌面还要留出滚动余量，所以两档分别预留 10rem / 13rem —— 手机端
-        沿用 13rem 会白白吃掉 3rem 的记录高度。 */}
+      {/* 高さの予約。ページヘッダー（タイトル行 + 目標 + Tabs で約 7.5rem）と内容の内側余白。スマホは p-4、
+        デスクトップは lg:p-6 で、デスクトップはスクロールの余りも要る。だから 10rem と 13rem を分けて予約する。スマホで
+        13rem のままにすると、記録の高さを 3rem 無駄に食う。 */}
       <div
         className={cn(
           "grid h-[calc(100svh-10rem)] min-h-0 grid-cols-1 gap-4",
@@ -1703,7 +1703,7 @@ export function SessionsTab({ taskId }: { taskId: string }) {
                           onClick={() => {
                             approvalFocus.close();
                             setActiveId(s.id);
-                            setListOpen(false); // 手机端选完即收起，把高度还给会话记录
+                            setListOpen(false); // スマホは選び終わったら畳み、高さをセッション記録へ返す
                             setWorkerMessage("");
                             setWorkerMessageRequestId("");
                           }}
@@ -1808,7 +1808,7 @@ export function SessionsTab({ taskId }: { taskId: string }) {
               <div className="ml-auto flex min-w-0 max-w-full items-center justify-end gap-x-3 gap-y-1 text-xs text-muted-foreground max-sm:w-full max-sm:flex-wrap">
                 {tokenTotal.any && (
                   <Tooltip>
-                    {/* 手机端用短标签（入/缓/出）：长标签会把这一行撑成两行，进一步压缩记录区。 */}
+                    {/* スマホは短いラベル（入/キャッシュ/出）を使う。長いラベルはこの行を2行にし、記録領域をさらに圧迫する。 */}
                     <TooltipTrigger asChild>
                       <span className="inline-flex min-w-0 items-center">
                         <TokenMetrics
