@@ -61,7 +61,7 @@ func zipMethodName(m uint16) string {
 func newSkillZipReader(buf []byte) (*zip.Reader, error) {
 	zr, err := zip.NewReader(bytes.NewReader(buf), int64(len(buf)))
 	if err != nil {
-		return nil, fmt.Errorf("无法解析压缩包(需为 zip 格式)：%w", err)
+		return nil, fmt.Errorf("圧縮ファイルを解析できません(zip 形式にしてください)：%w", err)
 	}
 	zr.RegisterDecompressor(zipMethodBzip2, func(r io.Reader) io.ReadCloser {
 		return io.NopCloser(bzip2.NewReader(r))
@@ -115,14 +115,14 @@ func zipEntryName(f *zip.File) string {
 func checkSkillZipMethods(entries []skillZipEntry) error {
 	for _, e := range entries {
 		if e.f.Flags&0x1 != 0 || e.f.Method == zipMethodAES {
-			return fmt.Errorf("压缩包已加密(%s)，请上传未加密的 zip", e.name)
+			return fmt.Errorf("圧縮ファイルは暗号化されています(%s)。暗号化していない zip をアップロードしてください", e.name)
 		}
 		switch e.f.Method {
 		case zipMethodStore, zipMethodDeflate, zipMethodBzip2, zipMethodZstd, zipMethodZstdPKW:
 		default:
-			return fmt.Errorf("压缩包使用了不支持的压缩方式 %s(method %d)：%s。"+
-				"请改用「存储」或「Deflate」重新打包(7-Zip/WinRAR 的压缩方式选 Deflate，"+
-				"或直接用系统自带的“压缩/发送到压缩文件夹”、命令行 zip -r)",
+			return fmt.Errorf("圧縮ファイルが未対応の圧縮方式 %s(method %d)を使っています：%s。"+
+				"「無圧縮（Store）」または「Deflate」で圧縮し直してください(7-Zip/WinRAR は圧縮方式に Deflate を選ぶか、"+
+				"OS 標準の「圧縮」や「送る > 圧縮フォルダー」、コマンドラインの zip -r を使ってください)",
 				zipMethodName(e.f.Method), e.f.Method, e.name)
 		}
 	}

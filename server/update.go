@@ -143,7 +143,7 @@ func (h *updateHub) begin(version string) bool {
 		return false
 	}
 	h.running = true
-	h.cur = updateProgress{Phase: selfupdate.PhaseDownload, Percent: 0, Message: "准备中…", Version: version}
+	h.cur = updateProgress{Phase: selfupdate.PhaseDownload, Percent: 0, Message: "準備中…", Version: version}
 	h.fanout(h.cur)
 	return true
 }
@@ -154,9 +154,9 @@ func (h *updateHub) finish(err error) {
 	defer h.mu.Unlock()
 	h.running = false
 	if err != nil {
-		h.cur = updateProgress{Phase: selfupdate.PhaseFailed, Percent: -1, Message: "更新失败", Error: err.Error(), Version: h.cur.Version}
+		h.cur = updateProgress{Phase: selfupdate.PhaseFailed, Percent: -1, Message: "更新に失敗しました", Error: err.Error(), Version: h.cur.Version}
 	} else {
-		h.cur = updateProgress{Phase: selfupdate.PhaseStaged, Percent: 100, Message: "新版本已就绪，正在重启…", Version: h.cur.Version}
+		h.cur = updateProgress{Phase: selfupdate.PhaseStaged, Percent: 100, Message: "新しいバージョンの準備ができました。再起動中…", Version: h.cur.Version}
 	}
 	h.fanout(h.cur)
 }
@@ -232,7 +232,7 @@ func (s *Server) updateCheck(w http.ResponseWriter, r *http.Request) {
 		out["disabled"] = true
 		out["has_update"] = false
 		out["comparable"] = false
-		out["reason"] = "在线更新已在本构建中禁用（不检查或下载远程版本）"
+		out["reason"] = "このビルドではオンライン更新が無効です（リモートのバージョンの確認もダウンロードも行いません）"
 		writeJSON(w, 200, out)
 		return
 	}
@@ -270,7 +270,7 @@ func (s *Server) updateCheck(w http.ResponseWriter, r *http.Request) {
 	if !comparable {
 		// 开发构建（dev / git describe 带后缀）没有可比较的版本号。放行只会
 		// 用正式版覆盖掉本地正在调试的二进制，所以直接不给更新。
-		out["reason"] = fmt.Sprintf("当前版本 %q 不是正式发布版本，已禁用一键更新", current)
+		out["reason"] = fmt.Sprintf("現在のバージョン %q は正式なリリース版ではないため、ワンクリック更新は無効です", current)
 	}
 	writeJSON(w, 200, out)
 }
@@ -283,7 +283,7 @@ func (s *Server) updateApply(w http.ResponseWriter, r *http.Request) {
 	// Online self-update is compiled out in this fork (selfupdate.Enabled):
 	// refuse before any download so no remote binary is ever staged.
 	if !selfupdate.Enabled {
-		writeErr(w, 403, "在线更新已在本构建中禁用")
+		writeErr(w, 403, "このビルドではオンライン更新が無効です")
 		return
 	}
 	current := BuildVersion
@@ -297,15 +297,15 @@ func (s *Server) updateApply(w http.ResponseWriter, r *http.Request) {
 	}
 	cmp, comparable := selfupdate.CompareVersions(current, rel.TagName)
 	if !comparable {
-		writeErr(w, 400, fmt.Sprintf("当前版本 %q 不是正式发布版本，已禁用一键更新", current))
+		writeErr(w, 400, fmt.Sprintf("現在のバージョン %q は正式なリリース版ではないため、ワンクリック更新は無効です", current))
 		return
 	}
 	if cmp >= 0 {
-		writeErr(w, 400, fmt.Sprintf("当前已是最新版本 %s", current))
+		writeErr(w, 400, fmt.Sprintf("すでに最新バージョン %s です", current))
 		return
 	}
 	if !updHub.begin(rel.TagName) {
-		writeErr(w, 409, "已有一个更新正在进行中")
+		writeErr(w, 409, "更新はすでに進行中です")
 		return
 	}
 
@@ -335,11 +335,11 @@ func (s *Server) updateRollback(w http.ResponseWriter, r *http.Request) {
 	// (selfupdate.Enabled). There is never a staged backup to roll back to,
 	// so refuse rather than appear to offer a working control.
 	if !selfupdate.Enabled {
-		writeErr(w, 403, "在线更新已在本构建中禁用")
+		writeErr(w, 403, "このビルドではオンライン更新が無効です")
 		return
 	}
 	if _, running := updHub.snapshot(); running {
-		writeErr(w, 409, "更新正在进行中，无法回滚")
+		writeErr(w, 409, "更新の進行中はロールバックできません")
 		return
 	}
 	if err := selfupdate.Rollback(); err != nil {

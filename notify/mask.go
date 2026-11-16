@@ -101,7 +101,7 @@ func (e *ErrDestinationChangedWithoutCredentials) Error() string {
 func PrepareConfigUpdate(kind string, stored, incoming map[string]any) (map[string]any, error) {
 	channel, ok := Get(kind)
 	if !ok {
-		return nil, fmt.Errorf("渠道类型 %q 未注册", kind)
+		return nil, fmt.Errorf("チャネル種別 %q は登録されていません", kind)
 	}
 	secrets := channel.SecretKeys()
 	destinations := channel.DestinationKeys()

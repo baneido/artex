@@ -55,14 +55,14 @@ export default function LoginPage() {
       .then(({ initialized }) => {
         if (!initialized) router.replace("/setup");
       })
-      .catch(() => setError("无法连接到后端服务"))
+      .catch(() => setError("バックエンドに接続できません"))
       .finally(() => setChecking(false));
   }, [router]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!agreed) {
-      setError("请先阅读并同意《使用须知》");
+      setError("先に「利用上の注意」を読んで同意してください");
       return;
     }
     setLoading(true);
@@ -72,7 +72,7 @@ export default function LoginPage() {
       auth.setToken(token);
       window.location.replace("/function/tasks");
     } catch {
-      setError("用户名或密码错误");
+      setError("ユーザー名またはパスワードが正しくありません");
     } finally {
       setLoading(false);
     }
@@ -81,7 +81,7 @@ export default function LoginPage() {
   if (checking) {
     return (
       <div role="status" className="flex min-h-dvh items-center justify-center text-muted-foreground">
-        正在检查登录状态…
+        ログイン状態を確認中…
       </div>
     );
   }
@@ -103,22 +103,24 @@ export default function LoginPage() {
       <div className="flex w-full items-center justify-center bg-background p-8 lg:w-2/3">
         <div className="w-full max-w-md space-y-10 py-24 lg:py-32">
           <div className="space-y-4 text-center">
-            <h2 className="text-2xl font-medium tracking-tight">登录</h2>
-            <p className="mx-auto max-w-xl text-muted-foreground">欢迎回来，请输入密码以继续使用 ARTEX</p>
+            <h2 className="text-2xl font-medium tracking-tight">ログイン</h2>
+            <p className="mx-auto max-w-xl text-muted-foreground">
+              おかえりなさい。ARTEX を使うにはパスワードを入力してください
+            </p>
           </div>
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
             <div className="space-y-1.5">
-              <Label htmlFor="username">用户名</Label>
+              <Label htmlFor="username">ユーザー名</Label>
               <Input id="username" value="ARTEX" readOnly className="bg-muted text-muted-foreground" />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="password">密码</Label>
+              <Label htmlFor="password">パスワード</Label>
               <Input
                 id="password"
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="请输入密码"
+                placeholder="パスワードを入力してください"
                 autoFocus
                 autoComplete="current-password"
               />
@@ -131,19 +133,19 @@ export default function LoginPage() {
                 className="mt-0.5"
               />
               <Label htmlFor="agree-terms" className="text-sm font-normal leading-relaxed text-muted-foreground">
-                我已阅读并同意
+                次の内容を読み、同意します：
                 <button
                   type="button"
                   onClick={() => setTermsOpen(true)}
                   className="mx-0.5 font-medium text-primary underline-offset-4 hover:underline"
                 >
-                  《使用须知》
+                  「利用上の注意」
                 </button>
               </Label>
             </div>
             {error && <p className="text-sm text-destructive">{error}</p>}
             <Button type="submit" className="w-full" disabled={loading || !password || !agreed}>
-              {loading ? "登录中..." : "登录"}
+              {loading ? "ログイン中..." : "ログイン"}
             </Button>
           </form>
         </div>
@@ -156,9 +158,9 @@ export default function LoginPage() {
               <ShieldCheck className="size-5" />
             </div>
             <div className="space-y-0.5">
-              <DialogTitle className="text-base">ARTEX 使用须知与免责声明</DialogTitle>
+              <DialogTitle className="text-base">ARTEX 利用上の注意および免責事項</DialogTitle>
               <p className="text-xs text-muted-foreground">
-                版本 v1.0 · 生效日期 2026-09-18 · 请在登录前完整阅读以下全部条款
+                バージョン v1.0 · 発効日 2026-09-18 · ログイン前に以下の条項をすべてお読みください
               </p>
             </div>
           </DialogHeader>
@@ -169,11 +171,11 @@ export default function LoginPage() {
             className="max-h-[60vh] space-y-5 overflow-y-auto px-6 py-5 text-sm leading-relaxed text-muted-foreground"
           >
             <p className="rounded-lg border bg-muted/40 p-3 text-foreground/80">
-              本《使用须知与免责声明》（以下简称"本声明"）是您与 ARTEX
-              项目作者及贡献者之间就使用本软件所达成的约定。请您在使用前审慎阅读、充分理解各条款内容，特别是以粗体或色块标注的免责、责任限制及禁止性条款。
+              この「利用上の注意および免責事項」（以下"本規約"）は、お客様と ARTEX
+              プロジェクトの作者およびコントリビューターとの間で、本ソフトウェアの使用について取り決めるものです。使用前に各条項を慎重に読み、十分に理解してください。特に、太字や色付きで示した免責、責任の制限、禁止に関する条項にご注意ください。
               <span className="font-medium text-foreground">
                 {" "}
-                一旦您下载、安装、访问或以任何方式使用本软件，即视为您已阅读、理解并同意接受本声明的全部约束。
+                本ソフトウェアをダウンロード、インストール、アクセス、その他の方法で使用した時点で、お客様は本規約を読み、理解し、そのすべてに拘束されることに同意したものとみなされます。
               </span>
             </p>
 
@@ -182,12 +184,14 @@ export default function LoginPage() {
                 <span className="flex size-5 items-center justify-center rounded-md bg-muted text-xs font-semibold text-muted-foreground">
                   1
                 </span>
-                第一条 · 定义与开源许可
+                第一条 · 定義とオープンソースライセンス
               </h4>
               <p className="pl-7">
-                本软件（ARTEX）是一款基于 GNU Affero General Public License
-                v3.0（AGPL-3.0）发布的开源程序。您可依据该协议自由使用、复制、修改和分发本软件；但任何衍生作品（包括通过网络向第三方提供的在线服务）均须同样以
-                AGPL-3.0 协议开源并向使用者公开对应的完整源代码。AGPL-3.0 完整条款以随附的 LICENSE 文件为准。
+                本ソフトウェア（ARTEX）は GNU Affero General Public License
+                v3.0（AGPL-3.0）で公開されているオープンソースプログラムです。お客様は同ライセンスに従い、本ソフトウェアを自由に使用、複製、改変、配布できます。ただし、派生物（ネットワーク経由で第三者に提供するオンラインサービスを含む）も同じく
+                AGPL-3.0
+                ライセンスでオープンソースとし、対応する完全なソースコードを利用者に公開する必要があります。AGPL-3.0
+                の全文は同梱の LICENSE ファイルを正とします。
               </p>
             </section>
 
@@ -196,10 +200,10 @@ export default function LoginPage() {
                 <span className="flex size-5 items-center justify-center rounded-md bg-muted text-xs font-semibold text-muted-foreground">
                   2
                 </span>
-                第二条 · 授权使用范围
+                第二条 · 許可される使用範囲
               </h4>
               <p className="pl-7">
-                本软件仅供个人学习、代码研究、安全技术原理探讨，以及在您自行搭建的本地隔离环境中进行技术验证之用，适用于学习、学术研究、代码审阅等非攻击性、非破坏性用途。除本条明确许可的情形外，您不得将本软件用于任何其他目的。
+                本ソフトウェアは、個人の学習、コードの研究、セキュリティ技術の原理の検討、およびお客様が自ら構築した隔離されたローカル環境での技術検証のためにのみ提供されます。学習、学術研究、コードレビューなど、攻撃や破壊を伴わない用途が対象です。本条で明示的に許可した場合を除き、本ソフトウェアを他の目的に使用することはできません。
               </p>
             </section>
 
@@ -209,16 +213,23 @@ export default function LoginPage() {
                   3
                 </span>
                 <AlertTriangle className="size-4" />
-                第三条 · 禁止行为
+                第三条 · 禁止行為
               </h4>
               <ul className="ml-7 list-decimal space-y-1.5 rounded-lg border border-destructive/20 bg-destructive/5 p-3 pl-8 text-foreground/80 marker:text-destructive/70">
                 <li>
-                  严禁对任何网站、线上服务、他人或第三方所有的联网系统发起扫描、探测、利用或攻击（无论是否已获得授权、是否为您自有资产）；
+                  いかなる Web
+                  サイト、オンラインサービス、他人または第三者が所有するネットワーク接続されたシステムに対しても、スキャン、探索、悪用、攻撃を行うことを固く禁じます（許可の有無や、お客様自身の資産であるかどうかを問いません）。
                 </li>
-                <li>严禁将本软件用于任何实际的渗透测试、攻防对抗、红蓝演练或生产环境；</li>
-                <li>严禁将本软件用于非法入侵、数据窃取、勒索、拒绝服务（DoS/DDoS）或任何破坏性、犯罪性活动；</li>
-                <li>严禁移除、篡改或规避本软件及其输出中的任何版权、许可或安全提示信息；</li>
-                <li>严禁从事任何违反您所在国家或地区法律、法规及监管规定的行为。</li>
+                <li>
+                  本ソフトウェアを実際のペネトレーションテスト、攻防演習、レッドチーム/ブルーチーム演習、本番環境で使用することを固く禁じます。
+                </li>
+                <li>
+                  本ソフトウェアを不正侵入、データ窃取、恐喝、サービス拒否（DoS/DDoS）、その他の破壊的または犯罪的な活動に使用することを固く禁じます。
+                </li>
+                <li>
+                  本ソフトウェアおよびその出力に含まれる著作権、ライセンス、セキュリティに関する表示を削除、改ざん、回避することを固く禁じます。
+                </li>
+                <li>お客様の所在する国または地域の法律、法令、規制に違反する行為を固く禁じます。</li>
               </ul>
             </section>
 
@@ -227,11 +238,11 @@ export default function LoginPage() {
                 <span className="flex size-5 items-center justify-center rounded-md bg-muted text-xs font-semibold text-muted-foreground">
                   4
                 </span>
-                第四条 · 知识产权
+                第四条 · 知的財産権
               </h4>
               <p className="pl-7">
-                本软件的著作权及相关知识产权归项目作者及贡献者所有，并在 AGPL-3.0
-                协议约定的范围内向您授予相应权利。除该协议明确授予的权利外，本声明未以明示或默示方式授予您任何其他权利。
+                本ソフトウェアの著作権および関連する知的財産権は、プロジェクトの作者およびコントリビューターに帰属し、AGPL-3.0
+                ライセンスの定める範囲でお客様に相応の権利が付与されます。同ライセンスが明示的に付与する権利を除き、本規約は明示または黙示を問わず、他のいかなる権利もお客様に付与しません。
               </p>
             </section>
 
@@ -240,10 +251,10 @@ export default function LoginPage() {
                 <span className="flex size-5 items-center justify-center rounded-md bg-muted text-xs font-semibold text-muted-foreground">
                   5
                 </span>
-                第五条 · 数据与隐私
+                第五条 · データとプライバシー
               </h4>
               <p className="pl-7">
-                本软件为可自行部署的开源程序，作者不运营任何集中式服务、亦不会收集或上传您的使用数据。您在使用过程中产生、处理或接触的一切数据，均由您自行掌控并负责其合法性与安全性；因数据处理不当引发的任何后果由您自行承担。
+                本ソフトウェアはお客様自身でデプロイできるオープンソースプログラムです。作者は集中型のサービスを運営しておらず、お客様の利用データを収集またはアップロードしません。使用中に生成、処理、接触するすべてのデータはお客様自身が管理し、その適法性と安全性についてお客様が責任を負います。データの不適切な取り扱いから生じた結果は、お客様自身が負うものとします。
               </p>
             </section>
 
@@ -252,13 +263,13 @@ export default function LoginPage() {
                 <span className="flex size-5 items-center justify-center rounded-md bg-muted text-xs font-semibold text-muted-foreground">
                   6
                 </span>
-                第六条 · 合规与法律责任
+                第六条 · コンプライアンスと法的責任
               </h4>
               <p className="pl-7">
-                您应自行遵守所在国家或地区关于网络安全、数据安全与个人信息保护、计算机犯罪等方面的全部法律法规（在中国大陆包括但不限于《网络安全法》《数据安全法》《个人信息保护法》及相关司法解释）。
+                お客様は、所在する国または地域のサイバーセキュリティ、データセキュリティと個人情報保護、コンピューター犯罪などに関するすべての法令を自ら遵守するものとします（中国本土では「サイバーセキュリティ法」「データセキュリティ法」「個人情報保護法」および関連する司法解釈を含みますが、これらに限りません）。
                 <span className="font-medium text-foreground">
                   {" "}
-                  因您违反上述法律法规或本声明约定而产生的一切法律责任与后果，均由您本人独立承担，与本软件作者及贡献者无关。
+                  お客様が上記の法令または本規約に違反したことで生じるすべての法的責任と結果は、お客様本人が単独で負うものとし、本ソフトウェアの作者およびコントリビューターは一切関係しません。
                 </span>
               </p>
             </section>
@@ -268,11 +279,11 @@ export default function LoginPage() {
                 <span className="flex size-5 items-center justify-center rounded-md bg-muted text-xs font-semibold text-muted-foreground">
                   7
                 </span>
-                第七条 · 免责声明与责任限制
+                第七条 · 免責事項と責任の制限
               </h4>
               <p className="pl-7">
-                本软件按"现状（AS IS）"与"现有（AS
-                AVAILABLE）"状态提供，不附带任何明示或默示的担保，包括但不限于对适销性、特定用途适用性、准确性及不侵权的担保。在适用法律允许的最大范围内，本软件作者及贡献者不对因使用或无法使用本软件（无论使用方式是否得当）而导致的任何直接、间接、偶然、特殊或后果性损失承担责任，包括但不限于数据丢失、系统损坏、业务中断、利润损失或法律纠纷。
+                本ソフトウェアは"現状有姿（AS IS）"および"提供可能な範囲（AS
+                AVAILABLE）"で提供され、明示または黙示を問わず、いかなる保証も伴いません。これには商品性、特定目的への適合性、正確性、権利非侵害の保証を含みますが、これらに限りません。適用法が許す最大限の範囲で、本ソフトウェアの作者およびコントリビューターは、本ソフトウェアの使用または使用不能（使用方法が適切かどうかを問いません）から生じた直接的、間接的、偶発的、特別、結果的な損害について責任を負いません。これにはデータの消失、システムの損傷、業務の中断、利益の損失、法的紛争を含みますが、これらに限りません。
               </p>
             </section>
 
@@ -281,17 +292,17 @@ export default function LoginPage() {
                 <span className="flex size-5 items-center justify-center rounded-md bg-muted text-xs font-semibold text-muted-foreground">
                   8
                 </span>
-                第八条 · 条款变更与最终解释
+                第八条 · 条項の変更と最終的な解釈
               </h4>
               <p className="pl-7">
-                作者有权根据法律法规或项目发展需要不时更新本声明，更新后的版本将随项目发布并自公布之日起生效；您继续使用本软件即视为接受修订后的条款。在法律允许的范围内，本声明的最终解释权归项目作者所有。若本声明任一条款被认定为无效，不影响其余条款的效力。
+                作者は、法令またはプロジェクトの発展上の必要に応じて、本規約を随時更新できます。更新後の版はプロジェクトとともに公開され、公表日から効力を生じます。本ソフトウェアの使用を続けた場合、改訂後の条項に同意したものとみなされます。法律が許す範囲で、本規約の最終的な解釈権はプロジェクトの作者に帰属します。本規約のいずれかの条項が無効と判断された場合でも、残りの条項の効力には影響しません。
               </p>
             </section>
           </div>
 
           <DialogFooter className="mx-0 mb-0 flex-col items-stretch gap-2 rounded-b-xl px-6 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-xs text-muted-foreground">
-              {readToEnd ? "您已浏览全部条款" : "请将条款滚动至底部后再确认"}
+              {readToEnd ? "すべての条項を確認しました" : "条項を最後までスクロールしてから確認してください"}
             </p>
             <DialogClose asChild>
               <Button
@@ -302,7 +313,7 @@ export default function LoginPage() {
                   setError("");
                 }}
               >
-                我已阅读并同意全部条款
+                すべての条項を読み、同意します
               </Button>
             </DialogClose>
           </DialogFooter>

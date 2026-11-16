@@ -189,28 +189,28 @@ func intp(v int) *int { return &v }
 // 注：planner/worker/mainagent/auto 的交互式 shell 默认由下方 interactive_shell_default_v1
 // 块统一置 true（尊重后续 toggle）；这里的 interactiveShell 只给需要「建行即默认开」的新 agent。
 var builtinAgents = []builtinAgent{
-	{"goals", "目标拆解", "goals", "把渗透任务目标拆解成若干独立、可验证的子目标。", []promptVar{
-		{"EngagementDescription", "任务描述（测试对象/背景）", "测试 example.com 站点", "exploration"},
+	{"goals", "目標分解", "goals", "ペネトレーションテストのタスク目標を、独立して検証できる複数のサブ目標に分解します。", []promptVar{
+		{"EngagementDescription", "タスクの説明（テスト対象/背景）", "example.com のサイトをテストする", "exploration"},
 		// Now 是全局 runtime 变量(见 server.globalPromptVars),不再在各 agent 目录里
 		// 重复定义,否则 withGlobalVars 追加时会与全局项撞名。
 	}, false, nil},
-	{"planner", "规划", "planner", "读取态势、判定目标，只在确有未覆盖的新方向时补充探索意图（每任务一个规划循环）。", []promptVar{
-		{"Goal", "任务总目标", "拿下 example.com 的管理员权限", "exploration"},
-		{"AssetSummary", "资产计数/类型分布摘要(可选)", "domain:3 ip:5 site:2", "distilled"},
+	{"planner", "プランナー", "planner", "状況を読み取って目標を判定し、本当に未カバーの新しい方向があるときだけ探索インテントを補います（タスクごとに計画ループが 1 つ）。", []promptVar{
+		{"Goal", "タスクの全体目標", "example.com の管理者権限を取得する", "exploration"},
+		{"AssetSummary", "資産数/種別分布の要約(任意)", "domain:3 ip:5 site:2", "distilled"},
 	}, false, nil},
-	{"mainagent", "主", "main", "人机接口：观察进展，把人的意图落成 hint 或高优先级意图。", []promptVar{
-		{"Goal", "当前任务目标", "拿下 example.com 的管理员权限", "exploration"},
-		{"AssetSummary", "开局态势摘要(可选)", "domain:3 ip:5", "distilled"},
-		{"FindingsSummary", "已确认漏洞摘要(可选)", "high:1 medium:2", "distilled"},
+	{"mainagent", "メイン", "main", "人との接点：進捗を観察し、人の意図を hint または優先度の高いインテントに落とし込みます。", []promptVar{
+		{"Goal", "現在のタスクの目標", "example.com の管理者権限を取得する", "exploration"},
+		{"AssetSummary", "開始時の状況の要約(任意)", "domain:3 ip:5", "distilled"},
+		{"FindingsSummary", "確認済みの脆弱性の要約(任意)", "high:1 medium:2", "distilled"},
 	}, false, nil},
-	{"worker", "执行", "worker", "领取一条意图执行，把发现的事实/漏洞写回知识图谱后停止。", []promptVar{
-		{"ProxyAddr", "记录代理地址(驱动 if 双文案)", "127.0.0.1:8080", "runtime"},
-		{"WorkerName", "worker 自我标识(可选)", "worker-1", "runtime"},
+	{"worker", "ワーカー", "worker", "インテントを 1 件受け取って実行し、見つけた事実/脆弱性を知識グラフに書き戻したら停止します。", []promptVar{
+		{"ProxyAddr", "記録プロキシのアドレス(if による 2 通りの文言を切り替え)", "127.0.0.1:8080", "runtime"},
+		{"WorkerName", "worker の自己識別名(任意)", "worker-1", "runtime"},
 	}, false, nil},
 	// Auto:内置「平台操作」agent。不参与渗透编排循环,经对话页驱动,用工具操作平台。
-	{"auto", "Auto", "assistant", "平台操作助手：用工具管理任务(建/看/暂停/给提示)与资产，并可创建/修改 skill、自定义工具、MCP。", nil, false, nil},
+	{"auto", "Auto", "assistant", "プラットフォーム操作アシスタント：ツールでタスク(作成/閲覧/一時停止/ヒント付与)と資産を管理し、skill、カスタムツール、MCP の作成や変更もできます。", nil, false, nil},
 	// 渗透测试:内置「独立渗透」agent。经对话页驱动,一人从侦察到收尾走完整条渗透链,自己规划自己执行自己验证。默认开启交互式 shell。
-	{"pentest", "渗透测试", "assistant", "独立渗透 agent：一人从侦察→找攻击面→深入利用→验证→收尾走完整条链，自己规划、自己执行、自己对抗式验证。", nil, true, intp(0)},
+	{"pentest", "ペネトレーションテスト", "assistant", "独立型ペネトレーション agent：偵察→攻撃面の特定→深掘り→検証→まとめまでの一連の流れを 1 つで進め、計画、実行、敵対的な検証を自分で行います。", nil, true, intp(0)},
 }
 
 // seedBuiltins inserts the fixed built-in agents and their variable catalog (idempotent).
@@ -281,6 +281,9 @@ WHERE name='browser' AND command='npx'
 	if err := d.seedBuiltinSkillVisibility(); err != nil {
 		return fmt.Errorf("seed skill visibility: %w", err)
 	}
+	if err := d.renameBuiltinRules(); err != nil {
+		return err
+	}
 	if err := d.seedDefaultInterceptRules(); err != nil {
 		return fmt.Errorf("seed intercept rules: %w", err)
 	}
@@ -292,6 +295,79 @@ WHERE name='browser' AND command='npx'
 	}
 	if err := d.seedDefaultAssetInterceptRules(); err != nil {
 		return fmt.Errorf("seed asset intercept rules: %w", err)
+	}
+	return nil
+}
+
+// builtinRuleRenames maps the former Chinese built-in rule labels to their Japanese
+// replacements so databases seeded before the translation are renamed in place
+// (the seeds run once, so they never rewrite existing rows).
+var builtinRuleRenames = [][2]string{
+	{"[内置] 政府网站 (.gov)", "[組み込み] 政府系サイト (.gov)"},
+	{"[内置] 政府网站 (.gov.cn)", "[組み込み] 政府系サイト (.gov.cn)"},
+	{"[内置] 教育网站 (.edu)", "[組み込み] 教育系サイト (.edu)"},
+	{"[内置] 教育网站 (.edu.cn)", "[組み込み] 教育系サイト (.edu.cn)"},
+	{"[内置] 递归强制删除 rm -rf", "[組み込み] 再帰的な強制削除 rm -rf"},
+	{"[内置] 删除系统关键目录", "[組み込み] システムの重要ディレクトリの削除"},
+	{"[内置] 磁盘格式化 mkfs", "[組み込み] ディスクのフォーマット mkfs"},
+	{"[内置] 覆写磁盘设备 dd", "[組み込み] ディスクデバイスの上書き dd"},
+	{"[内置] Fork 炸弹", "[組み込み] Fork ボム"},
+	{"[内置] 关机 / 重启", "[組み込み] シャットダウン / 再起動"},
+	{"[内置] 杀死全部进程", "[組み込み] 全プロセスの強制終了"},
+	{"[内置] 磁盘擦除 shred / wipe", "[組み込み] ディスクの消去 shred / wipe"},
+	{"[内置] 清空防火墙规则", "[組み込み] ファイアウォールルールの全削除"},
+	{"[内置] SQL DROP DATABASE / TABLE / SCHEMA", "[組み込み] SQL DROP DATABASE / TABLE / SCHEMA"},
+	{"[内置] SQL TRUNCATE", "[組み込み] SQL TRUNCATE"},
+	{"[内置] MongoDB drop / dropDatabase", "[組み込み] MongoDB drop / dropDatabase"},
+	{"[内置] Redis FLUSHALL / FLUSHDB", "[組み込み] Redis FLUSHALL / FLUSHDB"},
+	{"[内置] curl / wget 发送 DELETE 请求", "[組み込み] curl / wget による DELETE リクエスト送信"},
+	{"[内置] Python HTTP 客户端 DELETE（requests/httpx/aiohttp）", "[組み込み] Python HTTP クライアントの DELETE（requests/httpx/aiohttp）"},
+	{"[内置] 脚本中声明 HTTP DELETE 方法（JS/通用）", "[組み込み] スクリプト内での HTTP DELETE メソッドの宣言（JS/汎用）"},
+	{"[内置] 批量清空 / 清除接口路径", "[組み込み] 一括クリア / 削除系のエンドポイントパス"},
+	{"[内置] 破坏性系统命令", "[組み込み] 破壊的なシステムコマンド"},
+	{"[内置] 数据外泄管道", "[組み込み] データ流出パイプ"},
+	{"[内置] 删除类接口路径", "[組み込み] 削除系のエンドポイントパス"},
+}
+
+// builtinRuleMessageRenames does the same for the rejection messages: only rows whose
+// message is still the original Chinese text are rewritten, so user edits survive.
+var builtinRuleMessageRenames = [][2]string{
+	{"禁止执行递归强制删除（rm -rf / rm --recursive），可能永久损坏系统或靶机环境", "再帰的な強制削除（rm -rf / rm --recursive）の実行は禁止です。システムや検証対象の環境を恒久的に破損する恐れがあります"},
+	{"禁止删除系统关键路径", "システムの重要なパスの削除は禁止です"},
+	{"禁止格式化磁盘（mkfs）", "ディスクのフォーマット（mkfs）は禁止です"},
+	{"禁止使用 dd 覆写磁盘设备", "dd によるディスクデバイスの上書きは禁止です"},
+	{"禁止执行 Fork 炸弹", "Fork ボムの実行は禁止です"},
+	{"禁止执行关机或重启命令", "シャットダウンや再起動のコマンドの実行は禁止です"},
+	{"禁止 kill -9 -1 或 killall -9（杀死所有进程）", "kill -9 -1 や killall -9（全プロセスの強制終了）は禁止です"},
+	{"禁止对磁盘设备执行 shred/wipe 擦除", "ディスクデバイスへの shred/wipe による消去は禁止です"},
+	{"禁止清空防火墙规则（iptables -F / nft flush）", "ファイアウォールルールの全削除（iptables -F / nft flush）は禁止です"},
+	{"禁止执行 DROP 操作，可能不可逆地销毁数据库对象", "DROP の実行は禁止です。データベースのオブジェクトを元に戻せない形で破壊する恐れがあります"},
+	{"禁止执行 TRUNCATE，可能清空数据表所有数据", "TRUNCATE の実行は禁止です。テーブルの全データが消える恐れがあります"},
+	{"禁止执行 MongoDB drop 操作", "MongoDB の drop 操作の実行は禁止です"},
+	{"禁止执行 Redis FLUSHALL / FLUSHDB，可能清空全部缓存数据", "Redis の FLUSHALL / FLUSHDB の実行は禁止です。キャッシュデータがすべて消える恐れがあります"},
+	{"禁止通过 curl/wget 发送 HTTP DELETE 请求，可能删除目标系统数据", "curl/wget による HTTP DELETE リクエストの送信は禁止です。対象システムのデータが削除される恐れがあります"},
+	{"禁止使用 Python HTTP 客户端发送 DELETE 请求", "Python の HTTP クライアントによる DELETE リクエストの送信は禁止です"},
+	{"禁止在脚本中声明并发送 HTTP DELETE 请求", "スクリプト内での HTTP DELETE リクエストの宣言と送信は禁止です"},
+	{"禁止调用批量清空或销毁类接口（/clear /wipe /flush /purge 等）", "一括クリアや破棄を行うエンドポイント（/clear /wipe /flush /purge など）の呼び出しは禁止です"},
+	{"破坏性命令被拒绝（rm -rf / / mkfs / dd / fork bomb / 关机重启 / 覆写磁盘设备）", "破壊的なコマンドは拒否されました（rm -rf / / mkfs / dd / fork bomb / シャットダウン・再起動 / ディスクデバイスの上書き）"},
+	{"疑似数据外泄管道被拒绝（命令输出经 curl/wget/nc 外传）", "データ流出の疑いがあるパイプは拒否されました（コマンドの出力が curl/wget/nc で外部に送られます）"},
+	{"禁止调用删除类接口（/delete /remove /unlink /erase 等），不论使用哪种 HTTP 方法——多数应用的删除接口用 GET/POST 就能触发，同样会真实删除目标数据", "削除系のエンドポイント（/delete /remove /unlink /erase など）の呼び出しは、HTTP メソッドを問わず禁止です。多くのアプリでは削除用のエンドポイントが GET/POST でも動作し、同じく対象のデータが実際に削除されます"},
+}
+
+// renameBuiltinRules is idempotent: it only touches rows still carrying the old label.
+func (d *DB) renameBuiltinRules() error {
+	for _, p := range builtinRuleMessageRenames {
+		if _, err := d.Exec(`UPDATE intercept_rules SET message = $2 WHERE message = $1`, p[0], p[1]); err != nil {
+			return fmt.Errorf("rename intercept rule message %q: %w", p[0], err)
+		}
+	}
+	for _, p := range builtinRuleRenames {
+		if _, err := d.Exec(`UPDATE intercept_rules SET name = $2 WHERE name = $1`, p[0], p[1]); err != nil {
+			return fmt.Errorf("rename intercept rule %q: %w", p[0], err)
+		}
+		if _, err := d.Exec(`UPDATE asset_intercept_rules SET note = $2 WHERE builtin AND note = $1`, p[0], p[1]); err != nil {
+			return fmt.Errorf("rename asset intercept rule %q: %w", p[0], err)
+		}
 	}
 	return nil
 }
@@ -309,10 +385,10 @@ func (d *DB) seedDefaultAssetInterceptRules() error {
 		pattern string
 		note    string
 	}{
-		{"fuzzy_domain", ".gov", "[内置] 政府网站 (.gov)"},
-		{"fuzzy_domain", ".gov.cn", "[内置] 政府网站 (.gov.cn)"},
-		{"fuzzy_domain", ".edu", "[内置] 教育网站 (.edu)"},
-		{"fuzzy_domain", ".edu.cn", "[内置] 教育网站 (.edu.cn)"},
+		{"fuzzy_domain", ".gov", "[組み込み] 政府系サイト (.gov)"},
+		{"fuzzy_domain", ".gov.cn", "[組み込み] 政府系サイト (.gov.cn)"},
+		{"fuzzy_domain", ".edu", "[組み込み] 教育系サイト (.edu)"},
+		{"fuzzy_domain", ".edu.cn", "[組み込み] 教育系サイト (.edu.cn)"},
 	}
 	for _, r := range rules {
 		if _, err := d.Exec(`
@@ -372,121 +448,121 @@ func (d *DB) seedDefaultInterceptRules() error {
 	rules := []rule{
 		// ── 系统破坏性命令 (priority 100) ──────────────────────────────────
 		{
-			name:     "[内置] 递归强制删除 rm -rf",
+			name:     "[組み込み] 再帰的な強制削除 rm -rf",
 			target:   "tool_input",
 			typ:      "regex",
 			pattern:  `(?i)\brm\b.{0,80}(?:-[a-z]*r[a-z]*f[a-z]*|-[a-z]*f[a-z]*r[a-z]*|--recursive|--no-preserve-root)`,
 			action:   "deny",
-			message:  "禁止执行递归强制删除（rm -rf / rm --recursive），可能永久损坏系统或靶机环境",
+			message:  "再帰的な強制削除（rm -rf / rm --recursive）の実行は禁止です。システムや検証対象の環境を恒久的に破損する恐れがあります",
 			priority: 100,
 		},
 		{
-			name:     "[内置] 删除系统关键目录",
+			name:     "[組み込み] システムの重要ディレクトリの削除",
 			target:   "tool_input",
 			typ:      "regex",
 			pattern:  `\brm\b[^"'\n]{0,60}["'\s](/|/etc|/bin|/usr|/boot|/var|/lib|/sys|/proc|/dev|/sbin|/root)`,
 			action:   "deny",
-			message:  "禁止删除系统关键路径",
+			message:  "システムの重要なパスの削除は禁止です",
 			priority: 100,
 		},
 		{
-			name:     "[内置] 磁盘格式化 mkfs",
+			name:     "[組み込み] ディスクのフォーマット mkfs",
 			target:   "tool_input",
 			typ:      "regex",
 			pattern:  `\bmkfs\b`,
 			action:   "deny",
-			message:  "禁止格式化磁盘（mkfs）",
+			message:  "ディスクのフォーマット（mkfs）は禁止です",
 			priority: 100,
 		},
 		{
-			name:     "[内置] 覆写磁盘设备 dd",
+			name:     "[組み込み] ディスクデバイスの上書き dd",
 			target:   "tool_input",
 			typ:      "regex",
 			pattern:  `\bdd\b[^|\n]{0,100}\bof=\s*/dev/[a-zA-Z]`,
 			action:   "deny",
-			message:  "禁止使用 dd 覆写磁盘设备",
+			message:  "dd によるディスクデバイスの上書きは禁止です",
 			priority: 100,
 		},
 		{
-			name:     "[内置] Fork 炸弹",
+			name:     "[組み込み] Fork ボム",
 			target:   "tool_input",
 			typ:      "regex",
 			pattern:  `:\(\)\s*\{[^}]*:\|:`,
 			action:   "deny",
-			message:  "禁止执行 Fork 炸弹",
+			message:  "Fork ボムの実行は禁止です",
 			priority: 100,
 		},
 		{
-			name:     "[内置] 关机 / 重启",
+			name:     "[組み込み] シャットダウン / 再起動",
 			target:   "tool_input",
 			typ:      "regex",
 			pattern:  `\b(?:shutdown|reboot|halt|poweroff|init\s+[06])\b`,
 			action:   "deny",
-			message:  "禁止执行关机或重启命令",
+			message:  "シャットダウンや再起動のコマンドの実行は禁止です",
 			priority: 100,
 		},
 		{
-			name:     "[内置] 杀死全部进程",
+			name:     "[組み込み] 全プロセスの強制終了",
 			target:   "tool_input",
 			typ:      "regex",
 			pattern:  `\bkill\s+-9\s+-1\b|\bkillall\s+-9\b`,
 			action:   "deny",
-			message:  "禁止 kill -9 -1 或 killall -9（杀死所有进程）",
+			message:  "kill -9 -1 や killall -9（全プロセスの強制終了）は禁止です",
 			priority: 100,
 		},
 		{
-			name:     "[内置] 磁盘擦除 shred / wipe",
+			name:     "[組み込み] ディスクの消去 shred / wipe",
 			target:   "tool_input",
 			typ:      "regex",
 			pattern:  `\b(?:shred|wipe)\b[^|\n]{0,80}/dev/[a-zA-Z]`,
 			action:   "deny",
-			message:  "禁止对磁盘设备执行 shred/wipe 擦除",
+			message:  "ディスクデバイスへの shred/wipe による消去は禁止です",
 			priority: 100,
 		},
 		{
-			name:     "[内置] 清空防火墙规则",
+			name:     "[組み込み] ファイアウォールルールの全削除",
 			target:   "tool_input",
 			typ:      "regex",
 			pattern:  `\biptables\s+(?:-F|--flush)\b|\bnft\s+flush\s+ruleset\b`,
 			action:   "deny",
-			message:  "禁止清空防火墙规则（iptables -F / nft flush）",
+			message:  "ファイアウォールルールの全削除（iptables -F / nft flush）は禁止です",
 			priority: 100,
 		},
 		// ── 数据库破坏性操作 (priority 90) ─────────────────────────────────
 		{
-			name:     "[内置] SQL DROP DATABASE / TABLE / SCHEMA",
+			name:     "[組み込み] SQL DROP DATABASE / TABLE / SCHEMA",
 			target:   "tool_input",
 			typ:      "regex",
 			pattern:  `(?i)\bDROP\s+(?:DATABASE|TABLE|SCHEMA|INDEX|VIEW|TABLESPACE|USER|ROLE)\b`,
 			action:   "deny",
-			message:  "禁止执行 DROP 操作，可能不可逆地销毁数据库对象",
+			message:  "DROP の実行は禁止です。データベースのオブジェクトを元に戻せない形で破壊する恐れがあります",
 			priority: 90,
 		},
 		{
-			name:     "[内置] SQL TRUNCATE",
+			name:     "[組み込み] SQL TRUNCATE",
 			target:   "tool_input",
 			typ:      "regex",
 			pattern:  `(?i)\bTRUNCATE\s+(?:TABLE\s+)?\w`,
 			action:   "deny",
-			message:  "禁止执行 TRUNCATE，可能清空数据表所有数据",
+			message:  "TRUNCATE の実行は禁止です。テーブルの全データが消える恐れがあります",
 			priority: 90,
 		},
 		{
-			name:     "[内置] MongoDB drop / dropDatabase",
+			name:     "[組み込み] MongoDB drop / dropDatabase",
 			target:   "tool_input",
 			typ:      "regex",
 			pattern:  `(?i)\.(?:dropDatabase|dropCollection|drop)\s*\(`,
 			action:   "deny",
-			message:  "禁止执行 MongoDB drop 操作",
+			message:  "MongoDB の drop 操作の実行は禁止です",
 			priority: 90,
 		},
 		{
-			name:     "[内置] Redis FLUSHALL / FLUSHDB",
+			name:     "[組み込み] Redis FLUSHALL / FLUSHDB",
 			target:   "tool_input",
 			typ:      "regex",
 			pattern:  `(?i)\b(?:FLUSHALL|FLUSHDB)\b`,
 			action:   "deny",
-			message:  "禁止执行 Redis FLUSHALL / FLUSHDB，可能清空全部缓存数据",
+			message:  "Redis の FLUSHALL / FLUSHDB の実行は禁止です。キャッシュデータがすべて消える恐れがあります",
 			priority: 90,
 		},
 		// ── HTTP 破坏性请求 (priority 80) ──────────────────────────────────
@@ -495,39 +571,39 @@ func (d *DB) seedDefaultInterceptRules() error {
 		//   2. Python HTTP 客户端 .delete() 方法
 		//   3. JS/通用脚本里的 method: 'DELETE' / method="DELETE"
 		{
-			name:     "[内置] curl / wget 发送 DELETE 请求",
+			name:     "[組み込み] curl / wget による DELETE リクエスト送信",
 			target:   "tool_input",
 			typ:      "regex",
 			pattern:  `(?i)\bcurl\b[^|\n&;"]{0,300}(?:-X\s*DELETE|--request\s+DELETE|-XDELETE)|\bwget\b[^|\n&;"]{0,300}--method[=\s]+DELETE`,
 			action:   "deny",
-			message:  "禁止通过 curl/wget 发送 HTTP DELETE 请求，可能删除目标系统数据",
+			message:  "curl/wget による HTTP DELETE リクエストの送信は禁止です。対象システムのデータが削除される恐れがあります",
 			priority: 80,
 		},
 		{
-			name:     "[内置] Python HTTP 客户端 DELETE（requests/httpx/aiohttp）",
+			name:     "[組み込み] Python HTTP クライアントの DELETE（requests/httpx/aiohttp）",
 			target:   "tool_input",
 			typ:      "regex",
 			pattern:  `(?i)\b(?:requests|httpx|aiohttp|urllib\.request)\.delete\s*\(|session\.delete\s*\(|client\.delete\s*\(`,
 			action:   "deny",
-			message:  "禁止使用 Python HTTP 客户端发送 DELETE 请求",
+			message:  "Python の HTTP クライアントによる DELETE リクエストの送信は禁止です",
 			priority: 80,
 		},
 		{
-			name:     "[内置] 脚本中声明 HTTP DELETE 方法（JS/通用）",
+			name:     "[組み込み] スクリプト内での HTTP DELETE メソッドの宣言（JS/汎用）",
 			target:   "tool_input",
 			typ:      "regex",
 			pattern:  `(?i)axios\.delete\s*\(|method\s*[:=]\s*['"]DELETE['"]`,
 			action:   "deny",
-			message:  "禁止在脚本中声明并发送 HTTP DELETE 请求",
+			message:  "スクリプト内での HTTP DELETE リクエストの宣言と送信は禁止です",
 			priority: 80,
 		},
 		{
-			name:     "[内置] 批量清空 / 清除接口路径",
+			name:     "[組み込み] 一括クリア / 削除系のエンドポイントパス",
 			target:   "tool_input",
 			typ:      "regex",
 			pattern:  `(?i)/(?:clear|wipe|flush|purge|truncate|drop|destroy|factory[-_]reset|reset[-_]all)(?:[/?#"'\s]|$)`,
 			action:   "deny",
-			message:  "禁止调用批量清空或销毁类接口（/clear /wipe /flush /purge 等）",
+			message:  "一括クリアや破棄を行うエンドポイント（/clear /wipe /flush /purge など）の呼び出しは禁止です",
 			priority: 80,
 		},
 	}
@@ -564,18 +640,18 @@ func (d *DB) seedDefaultInterceptRulesV2() error {
 		priority int
 	}{
 		{
-			name:     "[内置] 破坏性系统命令",
+			name:     "[組み込み] 破壊的なシステムコマンド",
 			pattern:  `(?i)\b(rm\s+-rf\s+/|mkfs|dd\s+if=|:\(\)\s*\{|shutdown|reboot|>\s*/dev/sd)`,
 			action:   "deny",
-			message:  "破坏性命令被拒绝（rm -rf / / mkfs / dd / fork bomb / 关机重启 / 覆写磁盘设备）",
+			message:  "破壊的なコマンドは拒否されました（rm -rf / / mkfs / dd / fork bomb / シャットダウン・再起動 / ディスクデバイスの上書き）",
 			enabled:  true,
 			priority: 100,
 		},
 		{
-			name:     "[内置] 数据外泄管道",
+			name:     "[組み込み] データ流出パイプ",
 			pattern:  `(?i)(curl|wget|nc|ncat)\b[^|]*\b(\|\s*(curl|wget|nc))`,
 			action:   "deny",
-			message:  "疑似数据外泄管道被拒绝（命令输出经 curl/wget/nc 外传）",
+			message:  "データ流出の疑いがあるパイプは拒否されました（コマンドの出力が curl/wget/nc で外部に送られます）",
 			enabled:  false,
 			priority: 80,
 		},
@@ -613,14 +689,14 @@ func (d *DB) seedDefaultInterceptRulesV3() error {
 	if v, _, _ := d.GetSetting("intercept_default_rules_v3"); v == "done" {
 		return nil
 	}
-	const name = "[内置] 删除类接口路径"
+	const name = "[組み込み] 削除系のエンドポイントパス"
 	if _, err := d.Exec(`
 INSERT INTO intercept_rules(name, enabled, priority, match_target, match_type, pattern, action, message, timeout_enabled, timeout_seconds, timeout_action)
 SELECT $1, true, 80, 'tool_input', 'regex', $2, 'deny', $3, false, 60, 'deny'
 WHERE NOT EXISTS (SELECT 1 FROM intercept_rules WHERE name = $1)`,
 		name,
 		deleteEndpointPathPattern,
-		"禁止调用删除类接口（/delete /remove /unlink /erase 等），不论使用哪种 HTTP 方法——多数应用的删除接口用 GET/POST 就能触发，同样会真实删除目标数据",
+		"削除系のエンドポイント（/delete /remove /unlink /erase など）の呼び出しは、HTTP メソッドを問わず禁止です。多くのアプリでは削除用のエンドポイントが GET/POST でも動作し、同じく対象のデータが実際に削除されます",
 	); err != nil {
 		return fmt.Errorf("rule %q: %w", name, err)
 	}
