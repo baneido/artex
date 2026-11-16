@@ -539,20 +539,20 @@ func TestQueryByType(t *testing.T) {
 	}
 }
 
-// TestDeleteByTaskID: 独有资产被删,与其他任务共享的资产仅解除关联(保留),host 反查正确。
+// TestDeleteByTaskID。単独の資産は消え、ほかのタスクと共有する資産は関連だけ外す（残す）。host の逆引きは正しい。
 func TestDeleteByTaskID(t *testing.T) {
 	d, av2, _ := testSetup(t)
 	defer d.Close()
 
 	const taskA = int64(90001)
 	const taskB = int64(90002)
-	// solo:仅属 taskA
+	// solo。taskA だけに属する
 	solo, err := av2.UpsertRootDomain(UpsertRootDomainReq{Domain: "solo-del.test", TaskID: taskA})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer deleteAsset(d, solo)
-	// shared:先 taskA 再 taskB → task_ids={A,B}
+	// shared。先に taskA、次に taskB。task_ids={A,B}
 	shared, err := av2.UpsertRootDomain(UpsertRootDomainReq{Domain: "shared-del.test", TaskID: taskA})
 	if err != nil {
 		t.Fatal(err)
@@ -562,13 +562,13 @@ func TestDeleteByTaskID(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// host 反查(删资产前):应含两个域名
+	// host の逆引き（資産を消す前）。ドメインを 2 つ含む
 	hosts, err := av2.HostsByTask(taskA)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !slices.Contains(hosts, "solo-del.test") || !slices.Contains(hosts, "shared-del.test") {
-		t.Fatalf("HostsByTask 缺 host: %v", hosts)
+		t.Fatalf("HostsByTask に host がありません: %v", hosts)
 	}
 
 	n, err := av2.DeleteByTaskID(taskA)
@@ -576,19 +576,19 @@ func TestDeleteByTaskID(t *testing.T) {
 		t.Fatal(err)
 	}
 	if n != 1 {
-		t.Fatalf("DeleteByTaskID: 应删 1 个独有资产,实删 %d", n)
+		t.Fatalf("DeleteByTaskID: 単独の資産を 1 件消す必要があります。実際は %d 件です", n)
 	}
-	// solo 已删
+	// solo は消えた
 	if a, _ := av2.GetByIDs([]int64{solo}); len(a) != 0 {
-		t.Fatalf("solo 资产应被删除")
+		t.Fatalf("solo の資産は消えている必要があります")
 	}
-	// shared 保留,且 task_ids 只剩 taskB
+	// shared は残り、task_ids は taskB だけ
 	sa, _ := av2.GetByIDs([]int64{shared})
 	if len(sa) != 1 {
-		t.Fatalf("shared 资产应保留")
+		t.Fatalf("shared の資産は残っている必要があります")
 	}
 	if slices.Contains(sa[0].TaskIDs, taskA) || !slices.Contains(sa[0].TaskIDs, taskB) {
-		t.Fatalf("shared task_ids 应解除 A 保留 B,得 %v", sa[0].TaskIDs)
+		t.Fatalf("shared の task_ids は A を外して B を残す必要があります。実際は %v", sa[0].TaskIDs)
 	}
 }
 
@@ -640,7 +640,7 @@ func TestQueryByTask(t *testing.T) {
 	}
 }
 
-// 任务资产列表按页取,不再被固定条数截断:60 条资产用 25/页要能完整翻出来。
+// タスクの資産一覧はページで取る。固定件数では切らない。資産 60 件を 1 ページ 25 件で、最後まで繰れる。
 func TestQueryByTaskPaging(t *testing.T) {
 	d, av2, _ := testSetup(t)
 	defer d.Close()
@@ -739,7 +739,7 @@ func TestQueryByCompany(t *testing.T) {
 	}
 }
 
-// 企业资产列表同样按页取,不被固定条数截断。
+// 企業の資産一覧もページで取る。固定件数では切らない。
 func TestQueryByCompanyPaging(t *testing.T) {
 	d, av2, cs := testSetup(t)
 	defer d.Close()
@@ -754,7 +754,7 @@ func TestQueryByCompanyPaging(t *testing.T) {
 		t.Fatalf("AddScope: added=%d, errors=%v", added, errs)
 	}
 
-	// UpsertSubdomain 会顺带建根域名资产,一并清掉
+	// UpsertSubdomain はルートドメインの資産も作る。一緒に消す
 	defer d.Exec(`DELETE FROM assets WHERE root_domain = 'qbc-paging.io'`)
 
 	const n = 60

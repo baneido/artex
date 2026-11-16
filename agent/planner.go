@@ -131,7 +131,7 @@ func renderPlannerTodos(items []actool.Todo) string {
 		return ""
 	}
 	var b strings.Builder
-	b.WriteString("\n\n【你的规划待办（跨唤醒保留，上一轮你写的）】：\n")
+	b.WriteString("\n\n【あなたの計画 TODO（起床をまたいで残る。前ラウンドであなたが書いたもの）】：\n")
 	for _, it := range items {
 		mark := map[actool.TodoStatus]string{actool.TodoPending: "☐", actool.TodoInProgress: "▶", actool.TodoCompleted: "✔"}[it.Status]
 		if mark == "" {
@@ -139,7 +139,7 @@ func renderPlannerTodos(items []actool.Todo) string {
 		}
 		b.WriteString(fmt.Sprintf("  %s %s\n", mark, it.Content))
 	}
-	b.WriteString("据此推进：只对【前置步骤已完成 / 其依赖的 fact 已存在】的下一步派意图；用 TodoWrite 更新清单（把已被 fact 满足的步骤标 completed）。不要重复派已在清单里 pending/in_progress 的步骤。")
+	b.WriteString("これに沿って進めてください。【前提ステップが完了している、または依存する fact が既にある】次の一歩だけにインテントを出してください。TodoWrite で一覧を更新し、fact で満たされたステップは completed にしてください。一覧で pending または in_progress のステップを重複して出さないでください。")
 	return b.String()
 }
 
@@ -148,22 +148,22 @@ func renderPlannerTodos(items []actool.Todo) string {
 // overview. Kind:
 //
 //	"done"    — a worker finished intent IntentID (its output conclusion is fetched).
-//	"finding" — a worker reported a finding on intent IntentID (Detail = 摘要).
-//	"goal"    — the human (via 主 agent 的 set_goals) added one OR MORE goals in a
-//	            single call (Goals = 本次新增的目标文本，1+ 条；set_goals 支持批量).
-//	"goal_deleted" — the human deleted a goal from 总览的目标管理 (Detail = 被删目标文本).
-//	"goal_edited"  — the human edited a goal from 总览的目标管理 (OldGoal→NewGoal 文本).
-//	"cancelled" — the human deleted intent IntentID (Detail = 删除原因). The intent is
+//	"finding" — a worker reported a finding on intent IntentID (Detail = 要約).
+//	"goal"    — the human (via メイン agent の set_goals) added one OR MORE goals in a
+//	            single call (Goals = 今回追加した目標テキスト。1 件以上。set_goals はバッチに対応).
+//	"goal_deleted" — the human deleted a goal from 概要の目標管理 (Detail = 削除された目標テキスト).
+//	"goal_edited"  — the human edited a goal from 概要の目標管理 (OldGoal→NewGoal のテキスト).
+//	"cancelled" — the human deleted intent IntentID (Detail = 削除理由). The intent is
 //	            stopped (not deleted) and the reason is attached to it as a fact.
 type TriggerEvent struct {
 	Kind     string
 	IntentID int64
 	Detail   string
-	Summary  string   // Kind=="cancelled" 专用：删除前捕获的意图摘要（真删除后节点已不存在，无法再查）
-	Goals    []string // Kind=="goal" 专用：本次 set_goals 新增的目标文本（1 条或多条）
-	OldGoal  string   // Kind=="goal_edited" 专用：修改前的目标文本
-	NewGoal  string   // Kind=="goal_edited" 专用：修改后的目标文本
-	Hints    []string // Kind=="hint" 专用：本次 add_hint 新增的提示文本（1 条或多条）
+	Summary  string   // Kind=="cancelled" 専用。削除前に捕まえたインテント要約（真の削除後はノードがなく、再照会できない）
+	Goals    []string // Kind=="goal" 専用。今回の set_goals で追加した目標テキスト（1 件または複数）
+	OldGoal  string   // Kind=="goal_edited" 専用。変更前の目標テキスト
+	NewGoal  string   // Kind=="goal_edited" 専用。変更後の目標テキスト
+	Hints    []string // Kind=="hint" 専用。今回の add_hint で追加したヒントテキスト（1 件または複数）
 }
 
 // renderTriggers spells out the change(s) that fired this round: for a finished
@@ -175,42 +175,42 @@ func renderTriggers(ts *db.ExplorationStore, evs []TriggerEvent) string {
 		return ""
 	}
 	var b strings.Builder
-	b.WriteString("\n\n【本次触发本轮的实际变动（先看这里，再决定是否补方向）】：")
+	b.WriteString("\n\n【今回このラウンドを起こした実際の変化（先にここを見て、方向を補うか決めてください）】：")
 	for _, ev := range evs {
 		switch ev.Kind {
 		case "goal":
 			if len(ev.Goals) == 1 {
-				b.WriteString(fmt.Sprintf("\n- 人（主 agent）新增了一个目标：%s —— 新的待达成目标，请据此补充探索方向（若尚无对应意图）。", ev.Goals[0]))
+				b.WriteString(fmt.Sprintf("\n- 人（メイン agent）が目標を 1 件追加しました：%s。新しい未達成の目標です。対応するインテントがまだなければ、これに沿って探索方向を補ってください。", ev.Goals[0]))
 			} else {
-				b.WriteString(fmt.Sprintf("\n- 人（主 agent）新增了 %d 个目标：%s —— 均为新的待达成目标，请逐一为尚无对应意图的目标补充探索方向。", len(ev.Goals), strings.Join(ev.Goals, "；")))
+				b.WriteString(fmt.Sprintf("\n- 人（メイン agent）が目標を %d 件追加しました：%s。いずれも新しい未達成の目標です。対応するインテントがまだない目標へ、1 件ずつ探索方向を補ってください。", len(ev.Goals), strings.Join(ev.Goals, "；")))
 			}
 		case "hint":
 			if len(ev.Hints) == 1 {
-				b.WriteString(fmt.Sprintf("\n- 人（主 agent）新增了一条战略提示：%s —— 已挂到探索图上，请据此调整/补充探索方向（若尚无对应意图）。", ev.Hints[0]))
+				b.WriteString(fmt.Sprintf("\n- 人（メイン agent）が戦略ヒントを 1 件追加しました：%s。探索グラフに付いています。対応するインテントがまだなければ、これに沿って探索方向を調整または補足してください。", ev.Hints[0]))
 			} else {
-				b.WriteString(fmt.Sprintf("\n- 人（主 agent）新增了 %d 条战略提示：%s —— 均已挂到探索图上，请逐一据此调整/补充探索方向。", len(ev.Hints), strings.Join(ev.Hints, "；")))
+				b.WriteString(fmt.Sprintf("\n- 人（メイン agent）が戦略ヒントを %d 件追加しました：%s。いずれも探索グラフに付いています。1 件ずつ、これに沿って探索方向を調整または補足してください。", len(ev.Hints), strings.Join(ev.Hints, "；")))
 			}
 		case "goal_deleted":
-			b.WriteString(fmt.Sprintf("\n- 人删除了该目标：%s —— 该目标已移除，请据此重判剩余目标/方向（不必再为它派意图）。", ev.Detail))
+			b.WriteString(fmt.Sprintf("\n- 人がこの目標を削除しました：%s。この目標は除かれています。残りの目標と方向を再判定してください（この目標へインテントを出す必要はありません）。", ev.Detail))
 		case "goal_edited":
-			b.WriteString(fmt.Sprintf("\n- 人修改了目标，由「%s」变为「%s」—— 请据新目标调整探索方向（原方向若已不适用请停派）。", ev.OldGoal, ev.NewGoal))
+			b.WriteString(fmt.Sprintf("\n- 人が目標を変更しました。「%s」から「%s」です。新しい目標に沿って探索方向を調整してください（元の方向がもう当てはまらないなら、出すのを止めてください）。", ev.OldGoal, ev.NewGoal))
 		case "finding":
-			b.WriteString(fmt.Sprintf("\n- 意图 #%d（%s）的 worker 报告了一个 finding：%s", ev.IntentID, intentSummary(ts, ev.IntentID), ev.Detail))
+			b.WriteString(fmt.Sprintf("\n- インテント #%d（%s）の worker が finding を 1 件報告しました：%s", ev.IntentID, intentSummary(ts, ev.IntentID), ev.Detail))
 		case "cancelled":
-			// 意图内容优先用删除时捕获的 Summary（真删除后节点已不存在，intentSummary 查不到）。
+			// インテント内容は、削除時に捕まえた Summary を優先する（真の削除後はノードがなく、intentSummary では引けない）。
 			sm := ev.Summary
 			if sm == "" {
 				sm = intentSummary(ts, ev.IntentID)
 			}
-			b.WriteString(fmt.Sprintf("\n- 意图 #%d 由用户删除，意图内容是：%s、删除原因是：%s。该意图已删除（不再执行）；请据此重新规划。", ev.IntentID, sm, ev.Detail))
+			b.WriteString(fmt.Sprintf("\n- インテント #%d はユーザーが削除しました。内容は %s、削除理由は %s です。このインテントは削除済みで、もう実行しません。これに沿って計画し直してください。", ev.IntentID, sm, ev.Detail))
 		default: // "done"
-			b.WriteString(fmt.Sprintf("\n- 意图 #%d（%s）的 worker 结束，输出结论：%s", ev.IntentID, intentSummary(ts, ev.IntentID), workerOutput(ts, ev.IntentID)))
+			b.WriteString(fmt.Sprintf("\n- インテント #%d（%s）の worker が終わりました。出力した結論：%s", ev.IntentID, intentSummary(ts, ev.IntentID), workerOutput(ts, ev.IntentID)))
 			if fids := factIDsYielded(ts, ev.IntentID); fids != "" {
-				b.WriteString(fmt.Sprintf("；本意图新产生的事实 id：%s ", fids))
+				b.WriteString(fmt.Sprintf("。このインテントが新しく生んだ事実 id：%s ", fids))
 			}
 		}
 	}
-	b.WriteString("\n（完整细节可 node_detail / get_worker_output / list_findings 再查。）")
+	b.WriteString("\n（完全な詳細は node_detail / get_worker_output / list_findings で再確認できます。）")
 	return b.String()
 }
 
@@ -249,7 +249,7 @@ func intentSummary(ts *db.ExplorationStore, id int64) string {
 func workerOutput(ts *db.ExplorationStore, id int64) string {
 	acts, _, err := ts.ActivityList(&id, 0, 1000)
 	if err != nil {
-		return "(取输出失败)"
+		return "(出力の取得に失敗しました)"
 	}
 	var pick *db.Activity
 	for i := range acts {
@@ -260,7 +260,7 @@ func workerOutput(ts *db.ExplorationStore, id int64) string {
 		}
 	}
 	if pick == nil {
-		return "(该 work 尚无输出记录)"
+		return "(この work にはまだ出力記録がありません)"
 	}
 	out, _ := ts.ActivityDetail(pick.ID)
 	if out == "" {
@@ -276,7 +276,7 @@ func truncOutput(s string, n int) string {
 	if len(r) <= n {
 		return s
 	}
-	return string(r[:n]) + " …（已截断，完整见 get_worker_output）"
+	return string(r[:n]) + " …（切り詰めています。全文は get_worker_output を見てください）"
 }
 
 // renderGraphOverview folds the pre-computed graph_overview snapshot into the
@@ -289,55 +289,55 @@ func renderGraphOverview(data map[string]any) string {
 	if err != nil {
 		return "" // fall back to the model calling graph_overview itself
 	}
-	return "\n\n【本轮态势（graph_overview 预取，等同你调用该工具的返回；需要细节再按需调 node_detail/list_facts 等）】：\n" + string(b)
+	return "\n\n【このラウンドの状況（graph_overview を先に取得したもので、そのツールを呼んだ戻りと同じです。詳細が必要なら node_detail/list_facts などを必要に応じて呼んでください）】：\n" + string(b)
 }
 
-// plannerDefaultTmpl is the built-in EDITABLE body (段 [A]) of the planner prompt,
-// seeded into agent_prompts. Goal is a {{.Goal}} template var; the 中间产物输出规约
+// plannerDefaultTmpl is the built-in EDITABLE body (区分 [A]) of the planner prompt,
+// seeded into agent_prompts. Goal is a {{.Goal}} template var; the 中間生成物の出力規約
 // tail is code-owned (artifactSpec) and appended by plannerSystem after rendering.
-const plannerDefaultTmpl = `你是一个网络安全平台授权渗透测试系统的"规划者"，被频繁唤醒（图一变就唤醒）。职责：读态势 → 判目标 → **只在确有未被覆盖的新方向时**补充探索意图。你是规划者、不是执行者：本轮所有产物只能是【生成/说清意图】或【判定目标】，绝不在 plan 里把活干了。
+const plannerDefaultTmpl = `あなたは、サイバーセキュリティプラットフォーム上の認可された侵入テストシステムの「プランナー」です。頻繁に起こされます（グラフが変わるたびに起こされます）。責務は、状況を読み、目標を判定し、**まだ覆われていない新しい方向が確かに存在するときだけ**探索インテントを補うことです。あなたはプランナーです。実行者ではありません。このラウンドの成果物は【インテントを生成する、または言い切る】か【目標を判定する】かだけです。plan の中で作業そのものを片付けないでください。
 
-任务目标：{{.Goal}}
+タスク目標：{{.Goal}}
 
-**本轮该产出几个意图（先想清楚这条）**：
-- **硬底线（最高优先）**：只要【目标未达成】且【当前没有任何 open 或 running 意图】（frontier_open=0 且 running_intents 为空），本轮就【必须】产出至少一个向目标推进的意图——没有在跑的 work 可等、也没有在排队的方向时，产出 0 意图=任务停摆；哪怕已知方向都只在 recent_done 里，也要据下面 done/exhausted/blocked 的判断另开一条或续派一条。
-- 硬底线之外，**产出 0 个意图是正常结果，但要有正当理由**（不是"少派更稳"的默认）：①**已覆盖**——你想到的方向都已被仍在 open/running 的意图处理（换措辞重复生成已存在的意图是严重错误）；②**等待依赖**——下一步依赖当前在跑 work 的产出、而它还没出来（此时硬派会让下游拿不到前置而空转，应等下次唤醒图更新后再派）。
-- 反过来：确有【未覆盖、且不依赖在跑 work】的新方向，或目标未达成且范围内仍有未测面，就该派——别把 0 意图当偷懒的默认。
+**このラウンドでインテントを何件出すか（先にこれを明確にしてください）**：
+- **硬い下限（最優先）**：【目標が未達成】かつ【現在 open も running のインテントが 1 件もない】（frontier_open=0 かつ running_intents が空）なら、このラウンドは目標へ進むインテントを少なくとも 1 件【出さなければなりません】。実行中の work もなく、待ち行列の方向もないときにインテント 0 件は、タスクの停止です。既知の方向が recent_done にしかなくても、下の done/exhausted/blocked の判断に沿って、別の 1 件を開くか、続きを 1 件出してください。
+- 硬い下限の外では、**インテント 0 件は正常な結果です。ただし正当な理由が必要です**（「少なく出すほうが安全」を既定にしないでください）。①**覆い済み**：思いついた方向は、まだ open/running のインテントが処理している（言い換えで、既存のインテントを重複生成するのは重大な誤りです）。②**依存を待つ**：次の一歩が、現在実行中の work の成果に依存し、それがまだ出ていない（このとき無理に出すと、下流は前提を得られず空回りします。次に起こされてグラフが更新されてから出してください）。
+- 逆に、【未カバーで、実行中の work に依存しない】新しい方向が確かにある、または目標が未達成で範囲内に未テストの面が残っているなら、出してください。インテント 0 件を、手を抜く既定にしないでください。
 
-**每次唤醒的决策流程**：
+**起床のたびに行う判断の流れ**：
 
-1. **完整态势已附在本提示下方**（就是 graph_overview 的返回，无需再调它）：task（原始标题+目标/根节点）、资产计数、goals+状态、open/running/recent_done 意图、sites_without_endpoints（无端点的站点，提示可能待探的方向）、facts（探索事实数，与漏洞是两类）、recent_facts（{id,summary,confidence?}）。
-   - **范围**：探索节点（goals/意图/facts/findings）只含本任务；**资产图全局共享**（多任务同一份，资产计数是全局在范围内的、非本任务独有）——出现非本任务相关的资产时忽略。
-   - **血缘**：每个意图带 parents（上游：派生自哪些事实/意图）和 yields（下游：产生了哪些事实/发现），recent_facts 每条带 from_intent；据此理解"哪些事实来自哪个方向、能否综合出新方向"。
-   - **否定/存疑观察**（recent_facts 里"端口关闭/不可注入"等）是 worker 的观察、不是定论：采信前先 node_detail(id) 看 evidence——evidence 扎实、confidence=observed 且手段已穷尽的才视为该方向暂时封住；evidence 缺失、只是"看起来像/只探一次"、或 confidence=inferred 的，按【尚未探明】处理，若在范围内且无其它意图覆盖，默认派一条复核意图去证实或推翻（**同一否定方向至多复核一次**；复核后仍为否定、且证据合理，就尊重该结论、不再派）。
-   - **要更深细节才按需调**：list_facts（分页，最新在前，默认 20，可 q 过滤、before 翻页，带 total/has_more）、list_findings（全部漏洞）、node_detail(id)（完整证据/详情；列表/recent_facts 只给摘要）、list_assets（pull：q 搜索、type/company_id/task_id 过滤、分页，或 id/ids 直取）、asset_neighbors。资产全局共享，别默认拉全量。
+1. **完全な状況はこのプロンプトの下に付いています**（graph_overview の戻りそのものなので、再呼び出しは不要です）。task（元のタイトルと目標、ルートノード）、資産数、goals と状態、open/running/recent_done のインテント、sites_without_endpoints（エンドポイントのないサイト。まだ探る余地のある方向の手がかり）、facts（探索事実の数。脆弱性とは別の 2 種類）、recent_facts（{id,summary,confidence?}）です。
+   - **範囲**：探索ノード（goals/インテント/facts/findings）はこのタスクだけを含みます。**資産グラフはグローバルに共有**されます（複数タスクで同一。資産数は範囲内のグローバルな数で、このタスク固有ではありません）。このタスクに関係しない資産が出たら無視してください。
+   - **系譜**：各インテントは parents（上流。どの事実やインテントから派生したか）と yields（下流。どの事実や検出事項を生んだか）を持ち、recent_facts の各件は from_intent を持ちます。これで「どの事実がどの方向から来たか、新しい方向へ総合できるか」を理解してください。
+   - **否定や疑義の観察**（recent_facts の「ポートが閉じている」「インジェクションできない」など）は worker の観察であり、定説ではありません。採用する前に node_detail(id) で evidence を見てください。evidence がしっかりしていて、confidence=observed で、手段を尽くしている場合だけ、その方向を一時的に塞がれたと見なします。evidence がない、「そう見える」「1 回探っただけ」、または confidence=inferred のものは【まだ探り切れていない】として扱い、範囲内で他のインテントが覆っていなければ、既定で確認用インテントを 1 件出して、裏付けるか覆してください（**同じ否定方向の再確認は多くても 1 回**です。再確認後も否定で、証拠が妥当なら、その結論を尊重し、もう出さないでください）。
+   - **より深い詳細が必要なときだけ、必要に応じて呼びます**。list_facts（ページ分割、新しい順、既定 20、q で絞り込み、before でページ送り、total/has_more 付き）、list_findings（脆弱性のすべて）、node_detail(id)（完全な証拠と詳細。一覧と recent_facts は要約だけ）、list_assets（pull。q 検索、type/company_id/task_id の絞り込み、ページ分割、または id/ids で直接取得）、asset_neighbors。資産はグローバル共有なので、既定で全量を引かないでください。
 
-2. **判目标（核心职责）**：goals 字段已含目标与状态；对已被某发现/事实证明的未达成目标，调 prove_goal(goal_id, evidence_id, reason) 标 met。**当你标记的恰是最后一个未完成目标时，系统自动判定整个任务完成**——收官只由逐个 prove_goal 驱动，没有别的"一键完成"手段。
-   - ⚠️ **量化验收核对（严禁提前盖章）**：目标含可量化条件（覆盖度达 X%、拿 N 个 flag、获得某权限）时，prove_goal 前【必须】核对上方 graph_overview 的实测值（coverage.pct、findings_total 计数等）：未达标就【禁止】prove_goal，改派意图补差；不得以"大体达成/核心已拿下"为由提前标 met。例：要求覆盖度 100% 而实测 coverage.pct=40% → 未达成，继续派补测意图。
+2. **目標を判定する（中心の責務）**：goals フィールドには目標と状態が既に入っています。いずれかの検出事項や事実が達成を証明している未達成の目標は、prove_goal(goal_id, evidence_id, reason) で met にしてください。**印を付けたものがちょうど最後の未完了目標であるとき、システムはタスク全体の完了を自動判定します**。締めは 1 件ずつの prove_goal だけで進み、ほかに「一括完了」の手段はありません。
+   - ⚠️ **数量での受け入れ確認（前倒しで印を押すことは禁止です）**：目標に数量化できる条件（カバレッジ X%、flag を N 個、ある権限の取得）があるとき、prove_goal の前に【必ず】上の graph_overview の実測値（coverage.pct、findings_total の件数など）を照合してください。基準に達していなければ prove_goal は【禁止】です。差分を埋めるインテントを出してください。「おおむね達成」「中核は取れた」を理由に、前倒しで met にしないでください。例：カバレッジ 100% が要求され、実測 coverage.pct=40% なら未達成です。補測のインテントを出し続けてください。
 
-3. **（可选，仅开局、极轻量）探测理解**：仅当图里几乎还没有 fact（recent_facts 基本为空、任务刚开始）、仅凭态势无法把初始意图说具体时，才用 Bash 等对目标做极少量、只读的探测（如 1–2 次 curl 看首页/指纹）。**唯一合法产物是一句更精准的意图描述**——绝不是漏洞的发现/验证/利用，也不是端点/目录/参数的枚举结果（那些是 worker 的活，写成意图派下去）。三条硬边界：
-   - 图里已有 worker 产出的 fact（facts>0 / recent_facts 非空）→【禁止】再自己探测，一切判断基于已有 fact，本轮产物只能是"派新意图"或"结束"；想深挖某线索 → 派意图让 worker 去查，不是自己 curl。
-   - 即使开局也最多探 ≤3 次就收手，只为把初始意图说清；一旦发现自己在"深入查证"而非"快速定方向"（逐个枚举端点/目录、逐个试 id、解码链、反复探同一接口、任何注入/越权/漏洞的测试验证——全是 worker 的重活），立刻停手写成意图。
-   - 能从现有事实/态势判断的，根本不必探测。
+3. **（任意。開始時だけで、ごく軽量）探って理解する**：グラフに fact がほとんどまだなく（recent_facts がほぼ空で、タスクが始まったばかり）、状況だけでは最初のインテントを具体的に言えないときだけ、Bash などで目標へごく少量の読み取り専用の探査をしてください（例：curl を 1 から 2 回、トップページやフィンガープリントを見る）。**合法な成果物は、より正確なインテント記述の 1 文だけです**。脆弱性の発見、検証、悪用ではなく、エンドポイント、ディレクトリ、パラメータの列挙結果でもありません（それらは worker の仕事なので、インテントに書いて出してください）。硬い境界は 3 つです。
+   - グラフに worker が生んだ fact が既にある（facts>0、または recent_facts が空でない）なら、自分で再び探査することは【禁止】です。判断は既存の fact に基づき、このラウンドの成果物は「新しいインテントを出す」か「終わる」かだけです。ある手がかりを深く掘りたいなら、インテントを出して worker に調べさせ、自分で curl しないでください。
+   - 開始時でも探査は多くても 3 回で手を止め、最初のインテントを言い切るためだけにしてください。自分が「方向を素早く決める」のではなく「深く調べている」（エンドポイントやディレクトリを 1 つずつ列挙する、id を 1 つずつ試す、デコードの連鎖、同じ API を繰り返し探る、インジェクション、権限越え、脆弱性のテスト検証。これらはすべて worker の重い仕事です）と気づいたら、すぐ手を止めてインテントに書いてください。
+   - 既存の事実や状況から判断できるなら、探査は不要です。
 
-4. **决定补哪些新方向**：**这里的"克制"只指【不重复已存在的意图】，不是"能少派就少派"**——目标未达成时，默认追问是"为逼近目标，还有哪些更深、更狠、尚未覆盖的打法"，而不是"是否可以收尾"。意图是【开放的探索方向】（不是固定类型/菜单），结合已知事实、资产、目标自判方向，逐一与 open + running + recent_done 比对：
-   - 已有 open/running 覆盖 → 不再生成（正在处理）。
-   - 在 recent_done 里出现过 → **先看该意图的 state（每条都带）分辨怎么停的，再决定**：
-     · **done（正常跑完）**：已覆盖 → 不原样重派；是否死路看它 yields 出的 fact 结论、而非 state；仅出现【材料性新机理】（新事实/资产/参数/明显不同的打法）才重派，且 summary 写清与上次的不同；换措辞、"再试一次说不定行"不算，禁止重试。
-     · **exhausted（预算耗尽、探到一半被掐断，只写回部分）/ blocked（模型或网络失败、基本没探成）**：都是中途没善终、信息不全——先用 get_worker_trace / get_worker_output 看它实际做到哪、卡在哪，再从下列里选：接近突破被预算掐 → 派"接上次进度继续"；纯外部故障没跑成（blocked 常是）→ 直接重派同方向；每次卡同一处 → 换打法/方向。依据永远是 trace 里的真实进度，不是 state 本身。
-   - 完全无任何意图覆盖的全新方向 → 生成。
-   - 所有已知方向都被仍在 open/running 的意图覆盖 → 不生成、直接结束（有在跑/在排队的 work，等它们推进）；但若只剩 recent_done 覆盖、已无 open/running 而目标未达成 → 按顶部硬底线必须另开或续派。
-   - **深度优先于覆盖度**：coverage 是下限/验收项、不是探索目标本身；发现高价值入口（可能通向 RCE/提权/数据外泄）后，优先派意图把那条路【往深打穿】，而不是为拉平覆盖度去铺广、逐个资产浅测。
-   - **保持路线多样、别过早收敛**：目标未达成时，若现有意图都挤在同一条路线/入口，而存在【本质不同】的未覆盖方向（另一入口面/另一类资产/另一条利用链），优先补那条分歧方向，而不是在同一线上加同义意图（看实质差异，不看措辞）；若该分歧方向已被现有意图覆盖，仍不生成。理想是 2–3 条机理不同的路线并存（如"从上传链打"与"从认证绕过打"），某条交出【目标逼近】的证据后才把资源集中过去。**但多样性永远服从顶部【操作约束】**：被约束排除的入口面/端口/主机/操作，即使本质不同也绝不生成意图。
+4. **どの新しい方向を補うか決める**：**ここでの「自制」は【既存のインテントを繰り返さない】ことだけを指します。「少なく出せるなら少なく出す」ではありません**。目標が未達成のとき、既定で問うのは「目標へ近づくために、まだ覆われていない、より深く、より強い打ち方は何か」であり、「締めてよいか」ではありません。インテントは【開いた探索方向】です（固定の種類やメニューではありません）。既知の事実、資産、目標と合わせて方向を自分で判断し、open、running、recent_done と 1 件ずつ比べてください。
+   - open/running が既に覆っているなら、もう生成しないでください（処理中です）。
+   - recent_done に出たことがあるなら、**まずそのインテントの state（各件に付いています）で、どう止まったかを見分けてから決めてください**。
+     · **done（正常に走り切った）**：覆い済みです。同じものを再送しないでください。行き止まりかどうかは state ではなく、yields した fact の結論で見てください。【実質的に新しい仕組み】（新しい事実、資産、パラメータ、明らかに違う打ち方）が出たときだけ再送し、summary に前回との違いを書いてください。言い換えや「もう一度やれば通るかもしれない」は数えません。再試行は禁止です。
+     · **exhausted（予算を使い切り、途中で切られ、一部だけ書き戻した）/ blocked（モデルまたはネットワークの失敗で、ほぼ探れていない）**：どちらも途中で終わっておらず、情報が足りません。先に get_worker_trace / get_worker_output で、実際にどこまでやり、どこで止まったかを見てから、次から選んでください。突破に近くて予算で切られたなら、「前回の進捗の続き」を出します。純粋な外部障害で走れていない（blocked に多い）なら、同じ方向をそのまま再送します。毎回同じ箇所で止まるなら、打ち方や方向を変えます。根拠は常に trace の実際の進捗であり、state そのものではありません。
+   - どのインテントにも覆われていない完全に新しい方向なら、生成してください。
+   - 既知の方向がすべて、まだ open/running のインテントに覆われているなら、生成せずそのまま終了してください（実行中または待ち行列の work があるので、それらの進行を待ちます）。ただし覆っているのが recent_done だけで、open/running がなく、目標が未達成なら、先頭の硬い下限に従い、別のものを開くか続きを出さなければなりません。
+   - **深さはカバレッジより優先します**：coverage は下限であり受け入れ項目であって、探索目標そのものではありません。価値の高い入口（RCE、権限昇格、データ流出へつながり得るもの）を見つけたら、カバレッジを平らにするために広く浅く資産を測るのではなく、その道を【深く突き破る】インテントを優先して出してください。
+   - **経路の多様性を保ち、早く収束させないでください**：目標が未達成のとき、既存インテントが同じ経路や入口に集まっていて、【本質的に異なる】未カバーの方向（別の入口面、別種の資産、別の利用チェーン）があるなら、同じ線に同義のインテントを足すのではなく、その分岐を優先して補ってください（文言ではなく実質の差を見てください）。その分岐が既存インテントに覆われているなら、やはり生成しないでください。理想は、仕組みの異なる経路が 2 から 3 本並ぶことです（例：「アップロードの連鎖から攻める」と「認証回避から攻める」）。ある経路が【目標への接近】の証拠を出してから、資源をそこへ集中します。**ただし多様性は、常に先頭の【操作の制約】に従います**。制約が除外した入口面、ポート、ホスト、操作には、本質が違ってもインテントを生成しないでください。
 
-   **串行利用链：分步派，别拆成并行。** 强依赖串行链（①→②→③，后一步依赖前一步的实际产出）：不要一次性并行下发（下游拿不到还不存在的前置只会重复/空转）；用 TodoWrite 把整条链记成待办（每步一条），本轮只派"前置已满足"的那步（通常第一步），待它产出 fact 后下次唤醒（提示会带上待办清单）再派下一步并把已满足的标 completed。"同一件事"别拆两条（"确认触发点"和"触发触发点"是同一步）；只有【平行、互不依赖】的维度（如枚举多个不相关端点）才用多意图并行。
+   **直列の利用チェーンは、段階に分けて出し、並列に割らないでください。** 強い依存のある直列チェーン（①の次が②、その次が③。後の一歩は前の一歩の実際の成果に依存する）は、一度に並列で出さないでください（下流は、まだ存在しない前提を得られず、繰り返しや空回りになります）。TodoWrite でチェーン全体を TODO にし（1 ステップ 1 件）、このラウンドは「前提が満たされた」ステップだけを出します（通常は最初の一歩です）。それが fact を出したあと、次に起こされたとき（プロンプトに TODO 一覧が付きます）に次の一歩を出し、満たされたものは completed にしてください。「同じこと」を 2 件に割らないでください（「発動点を確認する」と「発動点を発動する」は同じ一歩です）。【並行で、互いに依存しない】次元（関係のないエンドポイントを複数列挙するなど）だけ、複数インテントを並列に使ってください。
 
-5. **提交**：用【一次】add_intent 批量提交筛出的新方向（intents 数组，最多 4 个最高价值的，不要逐条多次调）：
-   - **summary**：一句话自然语言描述该方向（测试目标完整地址 + 做什么 + 为什么），不套固定分类；去重主要靠它与已有意图比对。
-   - **asset_ids**：本方向要测试/攻击的目标资产 id（尽量传，0/1/多个，来自 list_assets）——只要方向围绕具体资产（站点/接口/参数/主机）就务必传，用于覆盖去重、连入资产链路，跨多资产就都传；纯全局侦察无具体资产才留空。
-   - **parent_ids**：本方向由哪些上游节点综合得出（可选，0/1/多个）——多个事实结合产生一个意图就都传，派生自某上游意图/发现也传其 id，顶层全新方向留空。
+5. **提出**：絞り込んだ新しい方向を、add_intent の【1 回】でまとめて提出してください（intents 配列。価値の高いもの最大 4 件。1 件ずつ何度も呼ばないでください）。
+   - **summary**：その方向を自然言語の 1 文で書く（テスト目標の完全なアドレス、何をするか、なぜか）。固定分類にはめないでください。重複排除は、主にこれと既存インテントの比較で行います。
+   - **asset_ids**：この方向でテストまたは攻撃する対象資産 id（できるだけ渡す。0 件、1 件、複数。list_assets から）。方向が具体的な資産（サイト、API、パラメータ、ホスト）を中心にするなら必ず渡してください。カバレッジの重複排除と、資産チェーンへの接続に使います。複数資産にまたがるならすべて渡してください。純粋なグローバル偵察で具体的な資産がないときだけ空にします。
+   - **parent_ids**：この方向がどの上流ノードを総合して導かれたか（任意。0 件、1 件、複数）。複数の事実が合わさって 1 つのインテントになるならすべて渡してください。ある上流のインテントや検出事項から派生したなら、その id も渡してください。最上位のまったく新しい方向は空にしてください。
 
-不重复、不硬凑；但目标未达成、又有未覆盖且更深的打法时，该派就派。简洁、聚焦、高效。`
+繰り返しや無理な埋め合わせはしないでください。ただし目標が未達成で、未カバーかつより深い打ち方があるなら、出すべきときは出してください。簡潔に、焦点を絞り、効率よく進めてください。`
 
 func plannerSystem(goal, dataDir, workDir string) string {
 	body := renderSystem("planner", plannerDefaultTmpl, PlannerVars{Goal: goal, DataDir: dataDir, Now: nowStr()})
@@ -370,33 +370,33 @@ func (p *Planner) Plan(ctx context.Context, taskID int64, as *db.AssetStore, ts 
 	if origin, _ := ts.OriginFactID(); origin > 0 {
 		tsx.SetOwnerNode(origin) // planner-side anchors default to the task root (origin fact)
 	}
-	// 领域工具 + 基础默认工具集（Read/Write/Edit/MultiEdit/LS/Glob/Grep/Bash）
-	// 资产覆盖度功能关闭时剔除 add_task_scope/list_untested_assets（不入 prompt）。
+	// ドメインツールと、基本の既定ツールセット（Read/Write/Edit/MultiEdit/LS/Glob/Grep/Bash）
+	// 資産カバレッジ機能がオフのときは add_task_scope/list_untested_assets を除く（プロンプトに入れない）。
 	base := append(tsx.DropCoverageTools(tsx.PlannerTools()), actool.DefaultTools()...)
 	ctx = WithRunInfo(ctx, RunInfo{TaskID: taskID, ExplorationID: explorationID(ts)})
 	tools, def, cleanup := AugmentTools(ctx, "planner", base)
 	defer cleanup()
-	// 关键态势（刚完成的意图 + 预取的完整图）改放【本轮 user 输入】(见下方 input)，system
-	// 只留静态规划正文。move-out 让 system 每轮稳定、更利于缓存；代价是若单轮变长，态势可能
-	// 被 compaction 压缩（planner 单轮通常短，风险低）。situational 会拼进下方 input。
+	// 重要な状況（完了したばかりのインテントと、先に取った完全なグラフ）は【このラウンドの user 入力】へ移す（下の input）。system
+	// には静的な計画本文だけを残す。移すことで system はラウンドごとに安定し、キャッシュに有利になる。代償として、1 ラウンドが長くなると状況が
+	// compaction で圧縮され得る（planner の 1 ラウンドは通常短いので、リスクは低い）。situational は下の input に連結する。
 	situational := renderTriggers(ts, triggers) + renderGraphOverview(tsx.graphOverviewData())
-	// 任务级 deadline / 终局模式(经 ctx 注入,见 taskclock.go)。终局那一轮把任务超时
-	// planner 收尾词作为【本轮操作指令】拼进本轮 user 输入(随 situational),让它只做最后
-	// 目标判定、不产新意图。
+	// タスク単位の deadline と終局モード（ctx 経由で注入。taskclock.go を参照）。終局のラウンドは、タスクタイムアウト用の
+	// planner 締め文を【このラウンドの操作指示】として、このラウンドの user 入力へ連結する（situational に続ける）。最後の
+	// 目標判定だけをさせ、新しいインテントは出させない。
 	tc := taskClockFrom(ctx)
 	if tc.Final {
-		situational += "\n\n【任务终局收尾（本轮特殊指令，覆盖上面的常规规划流程）】：" + resolveTaskTimeoutWrapup("planner")
+		situational += "\n\n【タスク終局の締め（このラウンドの特別な指示。上の通常の計画手順を上書きします）】：" + resolveTaskTimeoutWrapup("planner")
 	}
-	// 本任务的工作目录 <workDir>/tasks/<taskID>，先建好。
+	// このタスクの作業ディレクトリ <workDir>/tasks/<taskID> を先に作る。
 	taskDir := ensureRunDir(p.workDir, taskID, 0)
 	ctx = intercept.WithReviewContext(ctx, taskDir, intercept.ReviewBackground{})
 	sysBody := plannerSystem(goal, p.workDir, taskDir)
 	if p.wantConstraints() {
-		sysBody += constraintBlock(ts) // 操作约束(若有)注入系统提示,框定探索边界
+		sysBody += constraintBlock(ts) // 操作の制約があればシステムプロンプトへ注入し、探索の境界を定める
 	}
 	system, boundary := deferredSystem(sysBody, def)
-	// planner 无自身墙钟预算;有 deadline 时把 MaxDuration 夹逼到剩余,让在跑的规划轮在
-	// 任务到点时进收尾(因超时→任务超时词,因步数→per-run 词)。
+	// planner 自身には壁時計予算がない。deadline があるときは MaxDuration を残り時間まで挟み、実行中の計画ラウンドが
+	// タスクの時刻に達したときに締めへ入るようにする（タイムアウトならタスクタイムアウト文、ステップ数なら per-run の文）。
 	maxDur, clamped := clampMaxDuration(tc.DeadlineUnix, 0)
 	settle := wrapupSettlement("planner", nil)
 	if tc.DeadlineUnix > 0 {
@@ -410,11 +410,11 @@ func (p *Planner) Plan(ctx context.Context, taskID int64, as *db.AssetStore, ts 
 		DeferredTools:   def.Deferred,
 		UnlockSet:       def.Unlock,
 		PermissionMode:  permission.ModeBypass,
-		EnableWebFetch:  true, // 走记录代理留痕；载入代理 CA 验证 MITM 重签的 HTTPS 证书
+		EnableWebFetch:  true, // 記録プロキシ経由で痕跡を残す。プロキシ CA を読み、MITM が再署名した HTTPS 証明書を検証する
 		WebFetchProxy:   p.proxyAddr,
 		WebFetchCACert:  p.proxyCACert,
-		// 联网搜索(可选)。ddgs 无需 key；brave-free 需 BraveKey；tavily 需 TavilyKey。
-		// WebSearchProxy 是独立出口代理(http/https/socks5)，与记录流量的 MITM 代理无关；空则直连。
+		// ネット検索（任意）。ddgs は key 不要。brave-free は BraveKey、tavily は TavilyKey が必要。
+		// WebSearchProxy は独立した出口プロキシ（http/https/socks5）で、トラフィックを記録する MITM プロキシとは別。空なら直接接続。
 		EnableWebSearch:       p.webSearch.Enabled,
 		WebSearchBackend:      p.webSearch.Backend,
 		BraveSearchAPIKey:     p.webSearch.BraveKey,
@@ -423,45 +423,45 @@ func (p *Planner) Plan(ctx context.Context, taskID int64, as *db.AssetStore, ts 
 		DeepSeekSearchAPIKey:  p.webSearch.DeepSeekAPIKey,
 		DeepSeekSearchModel:   p.webSearch.DeepSeekModel,
 		WebSearchProxy:        p.webSearch.Proxy,
-		BashEnv:               proxyEnv(p.proxyAddr, p.proxyCACert), // Bash 子命令默认走代理+信任 CA
-		WorkingDir:            taskDir,                              // 本任务工作目录 <workDir>/tasks/<taskID>
+		BashEnv:               proxyEnv(p.proxyAddr, p.proxyCACert), // Bash の子コマンドは既定でプロキシ経由とし、CA を信頼する
+		WorkingDir:            taskDir,                              // このタスクの作業ディレクトリ <workDir>/tasks/<taskID>
 		ToolOutputDir:         cmdOutDir(taskDir),
 		MaxTurns:              p.maxTurns, // 0 = unlimited (configurable in agent management)
-		MaxDuration:           maxDur,     // 0=不限;有 deadline 时=距 deadline 剩余
+		MaxDuration:           maxDur,     // 0=無制限。deadline があるときは deadline までの残り
 		Compaction:            compactionConfig(p.compactionWindow()),
-		// 跨唤醒共享的规划待办：让串行链在多轮之间保留（session 是新的，store 不是）。
+		// 起床をまたいで共有する計画 TODO。直列チェーンを複数ラウンドのあいだ残す（session は新しく、store はそうではない）。
 		Todos: p.todoFor(ts.ID()),
-		// 命中【本轮】步数预算→ SDK 跑收尾:把本轮已想清楚的结论落地(该派的 add_intent、
-		// 能证的 prove_goal、串行链记 TodoWrite),而非停止规划——planner 之后仍会被反复唤醒。
-		// clamped(被任务 deadline 夹逼)时改用 PromptByReason(见 wrapupSettlementForTask)。
+		// 【このラウンド】のステップ数予算に達すると SDK が締めを実行する。このラウンドで固めた結論を保存する（出すべき add_intent、
+		// 証明できる prove_goal、直列チェーンの TodoWrite）。計画を止めるのではない。planner はその後も繰り返し起こされる。
+		// clamped（タスク deadline に挟まれた）のときは PromptByReason を使う（wrapupSettlementForTask を参照）。
 		Settlement:   settle,
-		NonStreaming: p.nonStreaming(), // 该 profile 选非流式时走 Provider.Complete
-		MaxTokens:    p.maxTokens(),    // 0 = 不发上限,由服务端默认值决定
+		NonStreaming: p.nonStreaming(), // この profile が非ストリーミングを選んだときは Provider.Complete を使う
+		MaxTokens:    p.maxTokens(),    // 0 = 上限を送らない。サーバーの既定値に任せる
 	}
 	if p.tx != nil { // persist raw LLM conversation; one accumulating file per task's planner
 		opts.Transcript = p.tx
 		opts.SessionID = fmt.Sprintf("exp%d-planner", ts.ID())
 	}
-	// 实验功能:开启后由 noa 接管上下文压缩(归档集中在 <workDir>/noa/<SessionID> 下,持久)。
+	// 実験機能。有効にすると noa がコンテキスト圧縮を担う（アーカイブは <workDir>/noa/<SessionID> に集まり、永続）。
 	noaSession := fmt.Sprintf("exp%d-planner", ts.ID())
 	enableNoa(&opts, p.noaEnabledFn, p.workDir, noaSession, noaWarn(noaSession))
-	// 态势（刚完成的意图 + 完整图）现在拼进本轮 user 输入（见下方 input）。user 里还有
-	// 指令 + 跨唤醒待办（todo 是模型自己的规划便签，可再生，放 user 即可）。
-	// 开场白按「本轮有无具体变动」分两种：有变动 → 指向下方【实际变动】块；无变动
-	// (心跳定时巡检 / hint / 恢复等) → 别谎称"图发生了变化",转而提示顺带复查在跑意图。
-	lead := "刚有具体变动（见下面的【本次触发本轮的实际变动】），据此规划下一步："
+	// 状況（完了したばかりのインテントと完全なグラフ）は、今はこのラウンドの user 入力へ連結する（下の input）。user にはほかに
+	// 指示と、起床をまたぐ TODO がある（todo はモデル自身の計画メモで、再生成できるので user に置いてよい）。
+	// 書き出しは「このラウンドに具体的な変化があるか」で 2 通りに分ける。変化があるときは下の【実際の変化】ブロックを指す。変化がないとき
+	// （心拍の定期巡回、hint、再開など）は「グラフが変化した」と偽らず、実行中インテントの再確認を添える。
+	lead := "具体的な変化が起きました（下の【今回このラウンドを起こした実際の変化】を見てください）。これに沿って次の一歩を計画してください："
 	if len(triggers) == 0 {
-		lead = "本轮是**定时巡检（心跳到点）/无具体变动信号**的唤醒——图不一定有新变动。顺带复查在跑意图：长时间无进展或跑偏的用 steer_work 纠偏、方向整个错的用 kill_work 止损；再判定目标、决定是否补方向："
-		// 心跳/无变动唤醒时,若全图已无任何 open 或 running 意图 → 探索已停摆(没 worker 在跑、
-		// 也没排队方向)。明确告知 planner 并强制其本轮补出新方向,别只复查在跑意图后空转一轮。
+		lead = "このラウンドは**定期巡回（心拍の時刻）で、具体的な変化の信号がない**起床です。グラフに新しい変化があるとは限りません。ついでに実行中のインテントを再確認してください。長く進捗がない、または逸れているものは steer_work で軌道修正し、方向が全体として間違っているものは kill_work で損を止めてください。そのあと目標を判定し、方向を補うか決めてください："
+		// 心拍、または変化のない起床で、グラフ全体に open も running のインテントもなければ、探索は止まっている（worker が走っておらず、
+		// 待ち行列の方向もない）。planner に明示し、このラウンドで新しい方向を補わせる。実行中インテントを見ただけで空回りさせない。
 		if active, err := ts.HasActiveIntent(); err == nil && !active {
-			lead = "本轮是**定时巡检（心跳到点）**的唤醒,且当前**已没有任何 open 或 running 的意图**——没有 worker 在跑、也没有排队中的方向,探索已停摆。你**必须**在本轮产出一个或多个向目标推进、且与图中既有意图**互不重复**的新意图(不得产出 0 意图);先据下面的态势判定目标是否已达成,未达成则立即补方向："
+			lead = "このラウンドは**定期巡回（心拍の時刻）**の起床で、現在 **open も running のインテントが 1 件もありません**。走っている worker もなく、待ち行列の方向もなく、探索は止まっています。このラウンドで、目標へ進み、グラフ上の既存インテントと**重複しない**新しいインテントを 1 件以上**出さなければなりません**（0 件は不可です）。まず下の状況で目標が達成済みか判定し、未達成ならすぐに方向を補ってください："
 		}
 	}
-	input := lead + situational + "\n\n据上面的态势，判定目标。目标已【真正达成】（已拿到目标成果/已确认目标漏洞）时用 prove_goal 逐个标记。**硬底线：只要目标尚未达成、且当前没有任何 open 或 running 意图（frontier_open=0 且 running_intents 为空），本轮就必须产出至少一个向目标推进的意图——此时没有在跑的 work 可等、也没有在排队的方向，产出 0 意图=任务停摆。仅当已有 open/running 意图在推进、或目标已达成时，本轮才可以不产出新意图。**" +
+	input := lead + situational + "\n\n上の状況に基づいて目標を判定してください。目標が【本当に達成された】（目標の成果を得た、または目標の脆弱性を確認した）ときは、prove_goal で 1 件ずつ印を付けてください。**硬い下限：目標がまだ未達成で、現在 open も running のインテントが 1 件もない（frontier_open=0 かつ running_intents が空）なら、このラウンドは目標へ進むインテントを少なくとも 1 件出さなければなりません。このとき待つ実行中の work もなく、待ち行列の方向もなく、インテント 0 件はタスクの停止です。open/running のインテントが進行しているとき、または目標が達成済みのときだけ、このラウンドは新しいインテントを出さなくてよいです。**" +
 		renderPlannerTodos(opts.Todos.List())
-	// MaxDuration 现在会在墙钟到点打断在跑工具并就地进收尾(在活 ctx 上),单轮卡死不再
-	// 绕过收尾,无需外部硬 ctx 兜底。ctx 只承载 pause / kill / shutdown。
+	// MaxDuration は今、壁時計の時刻になると実行中のツールを中断し、生きている ctx の上でその場で締めへ入る。1 ラウンドの固着が
+	// 締めを迂回することはなく、外側の硬い ctx の予備は要らない。ctx が載せるのは pause、kill、shutdown だけである。
 	_, _, err = captureRun(ctx, opts, input,
 		func(r db.Activity) {
 			if emit != nil {

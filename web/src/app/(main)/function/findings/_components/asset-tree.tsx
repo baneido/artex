@@ -21,7 +21,7 @@ import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/in
 import type { FindingAssetKind, FindingAssetNode } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-// 图标沿用资产页的类型映射,同一种资产在两处长得一样。
+// アイコンは資産ページの種別対応を流用する。同じ種類の資産は両方で同じ見た目にする。
 const KIND_ICON: Record<FindingAssetKind, LucideIcon> = {
   company: BuildingIcon,
   root_domain: GlobeIcon,
@@ -44,12 +44,12 @@ const KIND_LABEL: Record<FindingAssetKind, string> = {
   none: "関連付けなし",
 };
 
-// TreeNode 是节点数组组装出来的树。后端已按「同父下发现多的在前」排好序,
-// 这里只需按数组顺序挂载。
+// TreeNode はノード配列から組み立てたツリー。バックエンドは「同じ親の下では検出事項が多いものを前」に並べ済み。
+// ここでは配列の順にぶら下げるだけでよい。
 interface TreeNode extends FindingAssetNode {
   children: TreeNode[];
   depth: number;
-  /** 树上真正渲染的文字;完整 label 仍保留在 label 里(悬停提示与面包屑用)。 */
+  /** ツリーに実際に描く文字。完全な label は label に残す（ホバーとパンくずで使う）。 */
   display: string;
 }
 
@@ -65,8 +65,8 @@ function parseAssetURL(raw: string): URL | null {
   }
 }
 
-// hostOf 取一个节点代表的宿主:URL 取 hostname,「host:port」取 host,其余就是
-// 标签本身(根域名 / 子域名 / IP)。
+// hostOf はノードが表すホストを取る。URL は hostname、「host:port」は host、それ以外は
+// ラベルそのもの（ルートドメイン、サブドメイン、IP）。
 function hostOf(label: string): string {
   const url = parseAssetURL(label);
   if (url) return stripBrackets(url.hostname);
@@ -74,25 +74,25 @@ function hostOf(label: string): string {
   return stripBrackets(hostPort ? hostPort[1] : label);
 }
 
-// shortLabel 去掉与父节点重复的前缀。service / endpoint 的 label 是完整 URL,而
-// 宿主域名/IP 上一行已经写过了 —— 深层节点本来就窄,再把 host 重复一遍,真正有
-// 信息量的端口和路径就全被截断掉了。完整值仍在 title 与面包屑里。
+// shortLabel は親ノードと重なる接頭辞を外す。service と endpoint の label は完全な URL だが、
+// ホストのドメインや IP は上の行にすでに書いてある。深いノードはもともと狭く、host をもう一度書くと、本当に必要な
+// ポートとパスが全部切れる。完全な値は title とパンくずに残る。
 function shortLabel(node: FindingAssetNode, parent?: FindingAssetNode): string {
   if (!parent) return node.label;
 
-  // 子域名挂在根域名下:去掉根域名后缀,只留自己那一段。
+  // サブドメインはルートドメインの下にぶら下げる。ルートドメインの接尾辞を除き、自分の部分だけ残す。
   if (node.kind === "subdomain" && node.label.endsWith(`.${parent.label}`)) {
     return node.label.slice(0, -(parent.label.length + 1)) || node.label;
   }
   if (node.kind !== "service" && node.kind !== "endpoint") return node.label;
 
-  // 父标签正好是自己的前缀(接口挂在同 URL 的服务下、服务挂在同 IP 下):直接砍掉。
+  // 親のラベルが自分の接頭辞そのもの（エンドポイントが同じ URL のサービス配下、サービスが同じ IP 配下）なら、そのまま切る。
   if (node.label.startsWith(parent.label)) {
     return node.label.slice(parent.label.length) || node.label;
   }
 
-  // 否则只有父节点确实就是这个 URL 的宿主时才简写,不然会丢掉辨识信息
-  // (比如服务因为缺子域名资产行而直接挂在根域名下,那就得显示完整 URL)。
+  // そうでないときは、親ノードが本当にこの URL のホストであるときだけ短くする。そうしないと見分けが落ちる
+  // （たとえばサービスがサブドメインの資産行が無くルートドメイン直下にぶら下がるなら、完全な URL を出す）。
   if (hostOf(node.label) !== hostOf(parent.label)) return node.label;
 
   const url = parseAssetURL(node.label);
@@ -113,7 +113,7 @@ export function buildAssetTree(nodes: FindingAssetNode[]): TreeNode[] {
     const current = byKey.get(node.key);
     if (!current) continue;
     const parent = node.parent ? byKey.get(node.parent) : undefined;
-    // 父节点缺失(被截断层级丢掉)时上提为顶层,不让子树整个消失。
+    // 親ノードが無い（階層が切れて落ちた）ときは最上位へ上げ、サブツリー全体が消えないようにする。
     if (parent) {
       parent.children.push(current);
       current.display = shortLabel(node, parent);
@@ -129,8 +129,8 @@ export function buildAssetTree(nodes: FindingAssetNode[]): TreeNode[] {
   return roots;
 }
 
-// assetPathOf 返回从顶层到该节点的路径,用于右侧面包屑。每一级同样只显示相对
-// 上一级的增量(display),完整值留在 label 里。
+// assetPathOf は最上位からそのノードまでの経路を返す。右のパンくずに使う。各段も同様に、
+// 一つ上からの増分（display）だけを出し、完全な値は label に残す。
 export function assetPathOf(nodes: FindingAssetNode[], key: string | null): (FindingAssetNode & { display: string })[] {
   if (!key) return [];
   const byKey = new Map(nodes.map((n) => [n.key, n]));
@@ -145,8 +145,8 @@ export function assetPathOf(nodes: FindingAssetNode[], key: string | null): (Fin
   return path.map((node, index) => ({ ...node, display: shortLabel(node, path[index - 1]) }));
 }
 
-// filterTree 按关键词过滤:命中的节点保留,并保留其整条祖先链(祖先自身可以不命中)。
-// 命中节点的子孙一并保留,便于继续下钻。
+// filterTree はキーワードで絞る。当たったノードを残し、その祖先鎖全体も残す（祖先自身は当たらなくてよい）。
+// 当たったノードの子孫も残し、さらに掘り下げられるようにする。
 function filterTree(nodes: TreeNode[], keyword: string): TreeNode[] {
   const kw = keyword.trim().toLowerCase();
   if (!kw) return nodes;
@@ -160,7 +160,7 @@ function filterTree(nodes: TreeNode[], keyword: string): TreeNode[] {
   return nodes.map(walk).filter((n): n is TreeNode => n !== null);
 }
 
-// collectKeys 收集一棵(子)树里的全部 key,用于「展开全部匹配项」。
+// collectKeys は（サブ）ツリー内の全 key を集める。「一致をすべて展開」に使う。
 function collectKeys(nodes: TreeNode[], out: Set<string> = new Set()): Set<string> {
   for (const node of nodes) {
     out.add(node.key);
@@ -176,9 +176,9 @@ interface AssetTreeProps {
   loading?: boolean;
   truncated?: boolean;
   droppedKinds?: string[];
-  /** 未选中任何资产时右侧展示的发现总数,用于「全部资产」那一行。 */
+  /** 資産を何も選んでいないとき右に出す検出事項の総数。「すべての資産」の行に使う。 */
   findingTotal: number;
-  /** 资产视图不轮询,树的计数靠这个按钮或页面内的增删改来刷新。 */
+  /** 資産ビューはポーリングしない。ツリーの件数はこのボタンか、ページ内の追加、削除、変更で更新する。 */
   onRefresh?: () => void;
 }
 
@@ -194,13 +194,13 @@ export function AssetTree({
 }: AssetTreeProps) {
   const [keyword, setKeyword] = React.useState("");
   const [expanded, setExpanded] = React.useState<Set<string>>(() => new Set());
-  // 记住用户手动折叠过的节点,免得「默认展开顶层」在每次刷新后又把它们撑开。
+  // ユーザーが手動で畳んだノードを覚えておく。「最上位は既定で展開」が、更新のたびにそれらを開かないようにする。
   const [collapsed, setCollapsed] = React.useState<Set<string>>(() => new Set());
 
   const roots = React.useMemo(() => buildAssetTree(nodes), [nodes]);
   const visible = React.useMemo(() => filterTree(roots, keyword), [roots, keyword]);
 
-  // 搜索时把匹配到的分支全部展开,否则命中项藏在折叠节点里等于没搜。
+  // 検索時は一致した枝を全部展開する。そうしないと、畳んだノードの中の一致は検索していないのと同じになる。
   const searching = keyword.trim() !== "";
   const searchKeys = React.useMemo(() => (searching ? collectKeys(visible) : null), [searching, visible]);
 
@@ -208,7 +208,7 @@ export function AssetTree({
     (node: TreeNode) => {
       if (searchKeys) return searchKeys.has(node.key);
       if (expanded.has(node.key)) return true;
-      // 顶层默认展开一层:再深的层级要用户自己点开,免得一次铺开上千行。
+      // 最上位は既定で1段だけ展開する。それより深い階層はユーザーが開く。一度に千行を広げないため。
       return node.depth === 0 && !collapsed.has(node.key);
     },
     [collapsed, expanded, searchKeys],

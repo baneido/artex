@@ -19,8 +19,8 @@ import { Progress } from "@/components/ui/progress";
 import { api, sseUrl } from "@/lib/api";
 import type { UpdateCheck, UpdateProgress } from "@/lib/types";
 
-/** 等待新版本上线的最长时间。一次升级要经过三次进程启动（暂存 → 换装 → 新版），
- *  每次都是秒级，三分钟足够覆盖慢磁盘和 Docker 容器重建。 */
+/** 新しいバージョンが上がるまで待つ最長時間。1回のアップデートはプロセス起動が3回ある（一時保存、入れ替え、新版）。
+ *  それぞれ秒単位なので、3分あれば遅いディスクと Docker コンテナの再作成をカバーできる。 */
 const RESTART_TIMEOUT_MS = 180_000;
 
 function humanSize(n?: number): string {
@@ -41,12 +41,12 @@ export function UpdateCard() {
   const [info, setInfo] = React.useState<UpdateCheck | null>(null);
   const [checking, setChecking] = React.useState(true);
   const [progress, setProgress] = React.useState<UpdateProgress | null>(null);
-  // 与 progress 分开：暂存完成后进程就没了，SSE 会断，此时要切到轮询 /api/health。
+  // progress とは分ける。一時保存が終わるとプロセスが無くなり、SSE は切れる。このときは /api/health のポーリングへ切り替える。
   const [restarting, setRestarting] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
 
-  // quiet 同时决定要不要绕过后端缓存：进页面时的自动检查用缓存（顶栏刚查过），
-  // 用户手动点「检查更新」则强制回源，否则刚发布的版本要等缓存过期才看得到。
+  // quiet はバックエンドのキャッシュを迂回するかも決める。ページを開いたときの自動確認はキャッシュを使う（トップバーが直前に調べている）。
+  // ユーザーが「更新を確認」を押したときは強制的に取り直す。そうしないと、公開したばかりのバージョンはキャッシュ期限まで見えない。
   const check = React.useCallback((quiet = false) => {
     setChecking(true);
     api
@@ -69,10 +69,10 @@ export function UpdateCard() {
     check(true);
   }, [check]);
 
-  // 轮询 /api/health 直到版本号变化。
+  // バージョン番号が変わるまで /api/health をポーリングする。
   //
-  // 判据必须是"版本变了"而不是"能连上了"：换装过程中旧版本会短暂地重新起来一次
-  // （那一次只负责把 artex.new 换上去然后立刻退出），只看连通性会误判成功。
+  // 判定は「つながった」ではなく「バージョンが変わった」でなければならない。入れ替えの途中で旧バージョンが短時間もう一度起動する
+  // （その1回は artex.new を置き換えてすぐ終了するだけ）。接続だけを見ると成功と誤判定する。
   const waitForNewVersion = React.useCallback(async (fromVersion: string) => {
     setRestarting(true);
     const deadline = Date.now() + RESTART_TIMEOUT_MS;
@@ -90,7 +90,7 @@ export function UpdateCard() {
           }
         }
       } catch {
-        // 重启窗口内连不上是预期的，继续轮询。
+        // 再起動の窓のあいだつながらないのは想定どおり。ポーリングを続ける。
       }
     }
     setRestarting(false);
@@ -99,7 +99,7 @@ export function UpdateCard() {
     );
   }, []);
 
-  // 订阅更新进度。SSE 不走 Next 的 /api 重写（那层会缓冲，事件推不出来）。
+  // 更新の進捗を購読する。SSE は Next の /api リライトを通さない（その層はバッファし、イベントを押し出せない）。
   const openStream = React.useCallback(
     (fromVersion: string) => {
       const es = new EventSource(sseUrl("/api/update/stream"));
@@ -123,8 +123,8 @@ export function UpdateCard() {
         }
       };
       es.onerror = () => {
-        // 进程退出时 SSE 必然断开。如果已经进入等待重启，这属于正常现象，
-        // 交给 /api/health 轮询继续判定即可。
+        // プロセス終了時に SSE は必ず切れる。すでに再起動待ちに入っているなら、これは正常である。
+        // /api/health のポーリングに判定を続ければよい。
         es.close();
       };
       return es;
@@ -180,13 +180,13 @@ export function UpdateCard() {
 
   const phase = progress?.phase;
   const showProgress = busy || restarting;
-  // 只有下载阶段拿得到真实百分比（按 Content-Length 算）。校验/解压/等待重启都是
-  // 时长不可知的阶段，进度条填满并加个脉冲动画表示"在忙但说不准还要多久"。
+  // 本当のパーセントが取れるのはダウンロード段階だけである（Content-Length で計算する）。検証、展開、再起動待ちは
+  // 所要時間が分からない段階なので、進捗バーを満たしてパルスアニメーションを付け、「作業中だが残り時間は分からない」と示す。
   const downloading = !restarting && phase === "downloading";
   const pct = downloading ? Math.max(progress?.percent ?? 0, 0) : 100;
 
   return (
-    // 设置页是多列瀑布流布局，卡片自己负责行间距并禁止跨列断开（见 page.tsx 的注释）。
+    // 設定ページは複数カラムの滝型レイアウトである。カード自身が行間隔を持ち、カラムをまたいで分断されない（page.tsx のコメントを参照）。
     <Card className="mb-4 break-inside-avoid md:mb-6">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">

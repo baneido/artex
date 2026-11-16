@@ -7,19 +7,19 @@ import (
 	"testing"
 )
 
-// GetSetting 对"键不存在"和"读取出错"的返回值只差一个 error：两种情况 value 都是
-// 空串。密码相关的 handler 一旦把 error 当成"还没设置密码"，就会在数据库抖动期间
-// 敞开初始化入口——authInit 会放行一个未认证请求去覆盖已有的管理员密码，
-// authStatus 则会把前端直接送到 /setup 去照着做这件事。
+// GetSetting は「キーが無い」と「読み取りエラー」の戻りが error の有無だけ違う。どちらの value も
+// 空文字である。パスワードの handler が error を「まだパスワードが無い」と扱うと、データベースが揺れている間
+// 初期化口を開けてしまう。authInit は未認証のリクエストを通し、既存の管理者パスワードを上書きする。
+// authStatus はフロントを /setup へ送り、同じことをさせる。
 //
-// 这两个测试把 handler 的连接池关掉来制造读取失败，断言两处都 fail closed。
+// この 2 つのテストは handler の接続プールを閉じて読み取り失敗を作り、どちらも fail closed だと確認する。
 func TestAuthStatusFailsClosedWhenDataSourceUnavailable(t *testing.T) {
 	m, err := NewManager(t.TempDir(), "")
 	if err != nil {
 		t.Skipf("postgres unavailable (%v)", err)
 	}
 	defer m.Close()
-	// 关掉池子，让后续 GetSetting 返回 error 而不是 sql.ErrNoRows。
+	// プールを閉じ、その後の GetSetting が sql.ErrNoRows でなく error を返すようにする。
 	if err := m.pg.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -29,13 +29,13 @@ func TestAuthStatusFailsClosedWhenDataSourceUnavailable(t *testing.T) {
 	s.authStatus(w, httptest.NewRequest("GET", "/api/auth/status", nil))
 
 	if w.Code != 503 {
-		t.Fatalf("status=%d want 503 (读失败被当成未初始化会把用户送去 /setup 覆盖密码); body=%s", w.Code, w.Body.String())
+		t.Fatalf("status=%d want 503 (読み取り失敗を未初期化と扱うと、ユーザーを /setup へ送りパスワードを上書きする); body=%s", w.Code, w.Body.String())
 	}
 	var payload struct {
 		Initialized *bool `json:"initialized"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &payload); err == nil && payload.Initialized != nil {
-		t.Fatalf("读失败时不应回答 initialized，得到 %v", *payload.Initialized)
+		t.Fatalf("読み取り失敗のとき initialized を返してはいけません。得た値 %v", *payload.Initialized)
 	}
 }
 
@@ -55,10 +55,10 @@ func TestAuthInitFailsClosedWhenDataSourceUnavailable(t *testing.T) {
 	s.authInit(w, httptest.NewRequest("POST", "/api/auth/init", body))
 
 	if w.Code != 503 {
-		t.Fatalf("status=%d want 503 (读失败时放行会让未认证请求覆盖已有密码); body=%s", w.Code, w.Body.String())
+		t.Fatalf("status=%d want 503 (読み取り失敗で通すと、未認証のリクエストが既存パスワードを上書きする); body=%s", w.Code, w.Body.String())
 	}
 	if strings.Contains(w.Body.String(), "token") {
-		t.Fatalf("读失败时不应签发 token: %s", w.Body.String())
+		t.Fatalf("読み取り失敗のとき token を発行してはいけません: %s", w.Body.String())
 	}
 }
 
@@ -67,13 +67,13 @@ func TestValidatePassword(t *testing.T) {
 		name, pw string
 		wantErr  bool
 	}{
-		{"空", "", true},
-		{"七位", "1234567", true},
-		{"八位", "12345678", false},
-		{"八个汉字按字符数而非字节数计", "密码密码密码密码", false},
-		{"三个汉字够 9 字节但只有 3 个字符", "密码强", true},
-		{"72 字节", strings.Repeat("a", 72), false},
-		{"73 字节超出 bcrypt 上限", strings.Repeat("a", 73), true},
+		{"空文字", "", true},
+		{"7文字", "1234567", true},
+		{"8文字", "12345678", false},
+		{"漢字 8 文字はバイト数ではなく文字数で数える", "密码密码密码密码", false},
+		{"漢字 3 文字は 9 バイトでも文字数は 3", "密码强", true},
+		{"72 バイト", strings.Repeat("a", 72), false},
+		{"73 バイトは bcrypt の上限を超える", strings.Repeat("a", 73), true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := validatePassword(tc.pw); (got != "") != tc.wantErr {

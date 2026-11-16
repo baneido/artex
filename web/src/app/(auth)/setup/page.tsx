@@ -17,8 +17,8 @@ export default function SetupPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [checking, setChecking] = useState(true);
-  // 查不到初始化状态时不能默认当成"未初始化"——那样会把初始化表单摆给一个
-  // 其实已经设过密码的实例，用户照着填就会覆盖掉原密码。此时关闭入口。
+  // 初期化状態が取れないとき、既定で「未初期化」と見なしてはならない。初期化フォームを、
+  // すでにパスワードを設定済みのインスタンスに出してしまう。ユーザーが入力すると元のパスワードを上書きする。このときは入口を閉じる。
   const [unavailable, setUnavailable] = useState(false);
 
   useEffect(() => {

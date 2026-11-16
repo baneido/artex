@@ -9,19 +9,19 @@ import (
 	"github.com/Autumn-27/artex/db"
 )
 
-// 总览「约束管理」的人工 CRUD 接口 + 注入范围开关的解析。操作约束(allow/deny)与 agent 侧的
-// set_constraints 工具写同一张 task_constraints 表;这里是人类在 UI 上直接增删改。约束仅是
-// 提示上下文——增删改后【不】通知 planner,下一轮规划自然读库生效(按产品决策)。每个变更 handler
-// 都走 beginTaskOperation/decInflight,避免与任务删除竞态(与目标/意图 CRUD 一致)。
+// 概要の「制約管理」の手動 CRUD と、注入範囲スイッチの解釈。操作制約（allow/deny）は agent 側の
+// set_constraints と同じ task_constraints テーブルへ書く。ここは人が UI で直接追加、変更、削除する。制約は
+// プロンプトの文脈にすぎない。追加、変更、削除のあと planner には通知しない。次の計画がデータベースを読んで反映する（製品上の決定）。各変更 handler は
+// beginTaskOperation/decInflight を通り、タスク削除との競合を避ける（目標とインテントの CRUD と同じ）。
 
-// 注入范围开关的 settings key,默认都开(GetBool 第二参数 = true)。
+// 注入範囲スイッチの settings key。デフォルトはどちらもオン（GetBool の第 2 引数 = true）。
 const (
 	settingConstraintsInjectPlanner = "constraints_inject_planner"
 	settingConstraintsInjectWorker  = "constraints_inject_worker"
 )
 
-// constraintInjectPlanner / constraintInjectWorker 报告是否把操作约束注入对应 agent 的
-// 系统提示(默认开)。作为 resolver 传给 planner/worker,每轮读 → 改开关即时生效。
+// constraintInjectPlanner / constraintInjectWorker は、操作制約を対応する agent の
+// システムプロンプトへ入れるかを返す（デフォルトはオン）。resolver として planner/worker に渡し、毎ラウンド読むので、スイッチの変更はすぐ効く。
 func (s *Server) constraintInjectPlanner() bool {
 	return s.m.pg.GetBool(settingConstraintsInjectPlanner, true)
 }
@@ -30,7 +30,7 @@ func (s *Server) constraintInjectWorker() bool {
 	return s.m.pg.GetBool(settingConstraintsInjectWorker, true)
 }
 
-// listConstraints 返回本任务的全部操作约束(allow 在前、deny 在后)。
+// listConstraints はこのタスクの操作制約をすべて返す（allow が前、deny が後）。
 func (s *Server) listConstraints(w http.ResponseWriter, r *http.Request) {
 	t, ok := s.m.Task(r.PathValue("id"))
 	if !ok {
@@ -45,7 +45,7 @@ func (s *Server) listConstraints(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"constraints": constraintDTOs(rows)})
 }
 
-// addConstraint 人工新增一条操作约束(kind=allow|deny)。不通知 planner。
+// addConstraint は操作制約を 1 件、人手で追加する（kind=allow|deny）。planner には通知しない。
 func (s *Server) addConstraint(w http.ResponseWriter, r *http.Request) {
 	t, ok := s.m.Task(r.PathValue("id"))
 	if !ok {
@@ -84,7 +84,7 @@ func (s *Server) addConstraint(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, ConstraintDTO{ID: strconv.FormatInt(id, 10), Kind: kind, Text: text, Origin: "human"})
 }
 
-// editConstraint 人工修改一条约束(kind + text)。不通知 planner。
+// editConstraint は制約を 1 件、人手で変更する（kind + text）。planner には通知しない。
 func (s *Server) editConstraint(w http.ResponseWriter, r *http.Request) {
 	t, ok := s.m.Task(r.PathValue("id"))
 	if !ok {
@@ -127,7 +127,7 @@ func (s *Server) editConstraint(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, ConstraintDTO{ID: strconv.FormatInt(cid, 10), Kind: kind, Text: text})
 }
 
-// deleteConstraint 人工删除一条约束。不通知 planner。
+// deleteConstraint は制約を 1 件、人手で削除する。planner には通知しない。
 func (s *Server) deleteConstraint(w http.ResponseWriter, r *http.Request) {
 	t, ok := s.m.Task(r.PathValue("id"))
 	if !ok {

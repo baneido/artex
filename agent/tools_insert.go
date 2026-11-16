@@ -13,8 +13,8 @@ import (
 	actool "github.com/Autumn-27/norma/tool"
 )
 
-// assetInterceptCandidates 提取一条待插入资产输入项的 域名/IP/URL 候选串，用于资产拦截匹配。
-// URL 的 host 会拆出归类，使「只带 URL」的服务/端点资产也能被 域名/IP 规则命中。
+// assetInterceptCandidates は、挿入予定の資産入力 1 件から、ドメイン、IP、URL の候補文字列を取り、資産インターセプトの照合に使う。
+// URL の host は分けて分類する。「URL だけ」のサービスやエンドポイントの資産も、ドメインや IP のルールに当たるようにする。
 func assetInterceptCandidates(item assetInputItem) (domains, ips, urls []string) {
 	add := func(dst *[]string, s string) {
 		if s = strings.TrimSpace(s); s != "" {
@@ -42,7 +42,7 @@ func assetInterceptCandidates(item assetInputItem) (domains, ips, urls []string)
 	return domains, ips, urls
 }
 
-// assetInputLabel 返回一条待插入资产的简短标识，用于拦截说明消息。
+// assetInputLabel は、挿入予定の資産 1 件の短い識別子を返す。インターセプトの説明メッセージに使う。
 func assetInputLabel(item assetInputItem) string {
 	typ := strings.TrimSpace(item.Type)
 	var target string
@@ -56,7 +56,7 @@ func assetInputLabel(item assetInputItem) string {
 	case strings.TrimSpace(item.ServiceIP) != "":
 		target = strings.TrimSpace(item.ServiceIP)
 	default:
-		target = "(未知)"
+		target = "(不明)"
 	}
 	if typ != "" {
 		return fmt.Sprintf("[%s] %s", typ, target)
@@ -124,7 +124,7 @@ func (t *ToolSet) insertAssets() actool.CoreTool {
 		"insert_assets",
 		"新しく見つけた資産をまとめて登録します。1 回で複数の種類を混在させられます（type は列挙値を参照）。\n種類ごとの必須フィールド：root_domain→domain；ip→ip（IPv4/IPv6 であること。ホスト名は不可）；subdomain→domain；app→app_name；service(HTTP)→url；service(非 HTTP)→service_name+port（ip/domain のどちらかは必須）；endpoint→url+method。その他のフィールドの意味は、それぞれの説明を参照してください。\nauth/technologies/params は追記して結合(append)し、元の値を上書きしません。\n戻り値：{results:[{index,id,type}], errors:[{index,error}]}",
 		obj(map[string]any{
-			// task_id 不暴露给模型：worker 归属哪个 task 由程序经 SetTaskID 权威赋值(见 handler)。
+			// task_id はモデルへ出さない。worker がどの task に属するかは、プログラムが SetTaskID で権威を持って入れる（handler を参照）。
 			"assets": map[string]any{
 				"type":        "array",
 				"description": "資産の配列。各要素が 1 件の資産記録に対応します",
@@ -184,7 +184,7 @@ func (t *ToolSet) insertAssets() actool.CoreTool {
 						"description": "見つかった認証情報の一覧。各項目に type/username/password などのフィールドを含みます（任意。追記し、上書きしません）",
 						"items":       map[string]any{"type": "object"},
 					},
-					// service (other，非 HTTP)
+					// service (other、HTTP 以外)
 					"service_name": str("サービス名。例 ssh/mysql/redis（service が非 HTTP のとき必須）"),
 					"port":         intp("ポート番号（service が非 HTTP のとき必須）"),
 					// endpoint
@@ -199,7 +199,7 @@ func (t *ToolSet) insertAssets() actool.CoreTool {
 		}, "assets"),
 		func(_ context.Context, in json.RawMessage) (actool.Result, error) {
 			if t.as == nil {
-				return actool.Errorf("insert_assets 未启用: AssetStore 未初始化"), nil
+				return actool.Errorf("insert_assets は使えません。AssetStore が初期化されていません"), nil
 			}
 			var a struct {
 				Assets []assetInputItem `json:"assets"`
@@ -207,8 +207,8 @@ func (t *ToolSet) insertAssets() actool.CoreTool {
 			if err := json.Unmarshal(in, &a); err != nil {
 				return actool.Errorf("invalid input: " + err.Error()), nil
 			}
-			// task_id 由程序权威赋值(worker: SetTaskID)，不接受模型传入——避免模型漏传/错传
-			// 导致资产未归任务或归错任务。无任务上下文的调用方(auto/pentest/chat)其 t.taskID=0。
+			// task_id はプログラムが権威を持って入れる（worker は SetTaskID）。モデルからの入力は受けない。渡し忘れや渡し間違いで
+			// 資産がタスクに属さない、または別タスクに属することを避ける。タスクコンテキストのない呼び出し元（auto、pentest、chat）は t.taskID=0。
 			taskID := t.taskID
 
 			type result struct {
@@ -224,8 +224,8 @@ func (t *ToolSet) insertAssets() actool.CoreTool {
 			var results []result
 			var errs []errEntry
 
-			// 资产闸门规则一次性载入；读取失败则跳过判定（不阻断插入）。
-			// 拦截规则 = 全局 ∪ 任务级 block；允许规则 = 任务级 allow。
+			// 資産ゲートのルールは一度に読み込む。読み取りに失敗したら判定を飛ばす（挿入は止めない）。
+			// インターセプトルールは全体とタスク単位の block の和。許可ルールはタスク単位の allow。
 			blockRules, _ := t.as.ListAssetInterceptRules()
 			var allowRules []db.AssetInterceptRule
 			if t.taskID > 0 {
@@ -236,12 +236,12 @@ func (t *ToolSet) insertAssets() actool.CoreTool {
 			}
 
 			for i, item := range a.Assets {
-				// 资产闸门：先拦截后允许，被拒的资产禁止插入（跳过 Upsert 及后续副作用）。
+				// 資産ゲート。先にインターセプトし、そのあと許可する。拒否された資産は挿入しない（Upsert と、その後の副作用を飛ばす）。
 				domains, ips, urls := assetInterceptCandidates(item)
 				if d := db.EvaluateAssetGate(blockRules, allowRules, domains, ips, urls); !d.Allowed {
 					errs = append(errs, errEntry{
 						Index: i,
-						Error: fmt.Sprintf("资产 %s %s，已禁止插入", assetInputLabel(item), d.Reason),
+						Error: fmt.Sprintf("資産 %s %s。挿入を禁止しました", assetInputLabel(item), d.Reason),
 					})
 					continue
 				}
@@ -343,16 +343,16 @@ func (t *ToolSet) insertAssets() actool.CoreTool {
 						nodeID := t.ownerNode
 						sourceNodeID = &nodeID
 					}
-					summary := "Agent 通过 insert_assets 登记"
+					summary := "Agent が insert_assets で登録"
 					if t.ownerNode > 0 {
-						summary = fmt.Sprintf("Worker 意图 #%d 通过 insert_assets 登记", t.ownerNode)
+						summary = fmt.Sprintf("Worker のインテント #%d が insert_assets で登録", t.ownerNode)
 					}
 					_ = t.as.SetTaskAssetSource(taskID, id, "agent", summary, sourceNodeID)
 				}
-				// 自动入测试范围(source='auto')：只对 worker 顶层显式插入的这一项，按其
-				// 类型加保守范围；side-effect 派生的资产不经此处，故范围不盲目扩大。taskID=0 时无操作。
-				// 与覆盖度开关无关：task_scope 是任务的范围边界(list/查询的过滤基准)，
-				// 覆盖度开关只决定要不要把它当分母去算指标，不决定要不要累积范围本身。
+				// テスト範囲へ自動で入れる（source='auto'）。worker がトップレベルで明示的に挿入したこの 1 件だけを、その
+				// 種別に応じて保守的な範囲として足す。副作用で派生した資産はここを通らないので、範囲はむやみに広がらない。taskID=0 のときは何もしない。
+				// カバレッジのスイッチとは無関係。task_scope はタスクの範囲の境界（list や検索の絞り込みの基準）である。
+				// カバレッジのスイッチは、それを分母にして指標を計算するかどうかだけを決め、範囲そのものを積むかどうかは決めない。
 				{
 					svcIP := item.ServiceIP
 					if svcIP == "" {
@@ -383,7 +383,7 @@ func (t *ToolSet) addCompanyScope() actool.CoreTool {
 		}, "company", "scope"),
 		func(_ context.Context, in json.RawMessage) (actool.Result, error) {
 			if t.cs == nil {
-				return actool.Errorf("add_company_scope 未启用: CompanyStore 未初始化"), nil
+				return actool.Errorf("add_company_scope は使えません。CompanyStore が初期化されていません"), nil
 			}
 			var a struct {
 				Company string `json:"company"`
@@ -395,11 +395,11 @@ func (t *ToolSet) addCompanyScope() actool.CoreTool {
 				return actool.Errorf(err.Error()), nil
 			}
 			if strings.TrimSpace(a.Company) == "" {
-				return actool.Errorf("company 不能为空"), nil
+				return actool.Errorf("company は空にできません"), nil
 			}
 			companyID, _, err := t.cs.UpsertCompany(a.Company, a.Logo)
 			if err != nil {
-				return actool.Errorf("创建/获取公司失败: " + err.Error()), nil
+				return actool.Errorf("企業の作成または取得に失敗しました: " + err.Error()), nil
 			}
 			lines := splitLines(a.Scope)
 			added, skipped, invalid, errMsgs := t.cs.AddScope(companyID, lines, a.Reason)
@@ -433,10 +433,10 @@ func (t *ToolSet) addTaskScope() actool.CoreTool {
 		}),
 		func(_ context.Context, in json.RawMessage) (actool.Result, error) {
 			if t.as == nil {
-				return actool.Errorf("add_task_scope 未启用: AssetStore 未初始化"), nil
+				return actool.Errorf("add_task_scope は使えません。AssetStore が初期化されていません"), nil
 			}
 			if t.taskID <= 0 {
-				return actool.Errorf("add_task_scope 需要任务上下文(当前无 task)"), nil
+				return actool.Errorf("add_task_scope にはタスクコンテキストが必要です（現在 task がありません）"), nil
 			}
 			type scopeEntry struct {
 				Kind  string `json:"kind"`
@@ -444,7 +444,7 @@ func (t *ToolSet) addTaskScope() actool.CoreTool {
 			}
 			var a struct {
 				Entries    []scopeEntry `json:"entries"`
-				scopeEntry              // 单条模式
+				scopeEntry              // 1 件モード
 				Reason     string       `json:"reason"`
 			}
 			_ = json.Unmarshal(in, &a)
@@ -484,10 +484,10 @@ func (t *ToolSet) listUntestedAssets() actool.CoreTool {
 		}),
 		func(_ context.Context, in json.RawMessage) (actool.Result, error) {
 			if t.as == nil {
-				return actool.Errorf("list_untested_assets 未启用: AssetStore 未初始化"), nil
+				return actool.Errorf("list_untested_assets は使えません。AssetStore が初期化されていません"), nil
 			}
 			if t.taskID <= 0 || t.ts == nil {
-				return actool.Errorf("list_untested_assets 需要任务上下文"), nil
+				return actool.Errorf("list_untested_assets にはタスクコンテキストが必要です"), nil
 			}
 			var a struct {
 				Type     string `json:"type"`
@@ -528,7 +528,7 @@ func (t *ToolSet) listAssets() actool.CoreTool {
 		}),
 		func(_ context.Context, in json.RawMessage) (actool.Result, error) {
 			if t.as == nil {
-				return actool.Errorf("list_assets 未启用: AssetStore 未初始化"), nil
+				return actool.Errorf("list_assets は使えません。AssetStore が初期化されていません"), nil
 			}
 			var a struct {
 				DSL    string  `json:"dsl"`
@@ -553,10 +553,10 @@ func (t *ToolSet) listAssets() actool.CoreTool {
 			case a.DSL != "":
 				assets, err = t.as.QueryDSLInScope(a.DSL, a.Type, t.taskID, a.Limit, a.Offset)
 			default:
-				return actool.Errorf("未传 id/ids 时 dsl 不能为空：不允许无条件查询全部资产，请提供查询条件"), nil
+				return actool.Errorf("id も ids も渡していないときは dsl を空にできません。条件なしで全資産を問い合わせることはできません。検索条件を渡してください"), nil
 			}
 			if err != nil {
-				return actool.Errorf("DSL 错误: " + err.Error()), nil
+				return actool.Errorf("DSL エラー: " + err.Error()), nil
 			}
 			return jsonResult(map[string]any{
 				"count":  len(assets),
@@ -566,7 +566,7 @@ func (t *ToolSet) listAssets() actool.CoreTool {
 	)
 }
 
-// listCompanies lets an agent enumerate companies (企业) with their scope + asset count.
+// listCompanies lets an agent enumerate companies (企業) with their scope + asset count.
 func (t *ToolSet) listCompanies() actool.CoreTool {
 	return readTool(
 		"list_companies",
@@ -576,7 +576,7 @@ func (t *ToolSet) listCompanies() actool.CoreTool {
 		}),
 		func(_ context.Context, in json.RawMessage) (actool.Result, error) {
 			if t.cs == nil {
-				return actool.Errorf("list_companies 未启用: CompanyStore 未初始化"), nil
+				return actool.Errorf("list_companies は使えません。CompanyStore が初期化されていません"), nil
 			}
 			var a struct {
 				Search string `json:"search"`
@@ -584,7 +584,7 @@ func (t *ToolSet) listCompanies() actool.CoreTool {
 			_ = json.Unmarshal(in, &a)
 			cos, err := t.cs.ListCompanies()
 			if err != nil {
-				return actool.Errorf("查询公司失败: " + err.Error()), nil
+				return actool.Errorf("企業の検索に失敗しました: " + err.Error()), nil
 			}
 			q := strings.ToLower(strings.TrimSpace(a.Search))
 			type companyOut struct {
@@ -624,20 +624,20 @@ func splitLines(s string) []string {
 // WorkerTools returns the tool set for a work agent.
 func (t *ToolSet) WorkerTools() []actool.CoreTool {
 	return []actool.CoreTool{
-		// list_findings 保留：报漏洞前先查本任务已确认漏洞，避免重复上报同一漏洞。
+		// list_findings は残す。脆弱性を報告する前に、このタスクの確認済み脆弱性を見て、同じ脆弱性の重複報告を避ける。
 		t.listFindings(),
 		t.addFinding(), t.recordFact(),
 		// asset management (handlers guard nil store internally)。
-		// add_company_scope 不给 worker：定义企业资产范围属规划/主控/Auto 的职责，worker 只执行探索。
+		// add_company_scope は worker に渡さない。企業の資産範囲を定義するのは計画、メイン、Auto の役目で、worker は探索を実行するだけである。
 		t.insertAssets(), t.listAssets(),
-		// 跨 work 回看：worker 也可复用其他 work 的观察，避免重复劳动。
-		// search_all_worker_traces：不必先知道 intent_id，按关键字全局捞命中步骤；
-		// get_worker_trace：锁定某条 work 后列步骤/就地搜/取完整内容。
+		// work をまたいで見返す。worker も他の work の観察を再利用し、作業の重複を避ける。
+		// search_all_worker_traces は、intent_id を先に知らなくても、キーワードで当たったステップを全体から拾う。
+		// get_worker_trace は、ある work を特定したあと、ステップを列挙し、その場で検索し、完全な内容を取る。
 		t.searchAllWorkerTraces(), t.getWorkerTrace(),
-		// node_detail：worker 拿到 intent_id/节点 id 后可查该节点完整详情（配合上面的回看）。
+		// node_detail。worker は intent_id やノード id を受け取ったあと、そのノードの完全な詳細を調べられる（上の見返しと組み合わせる）。
 		t.nodeDetail(),
-		// 以下工具仍【不给】worker，只留给 planner/main（读上下文、跨 work 复盘是规划职责，
-		// worker 只做单条意图的执行与写回）：list_facts / list_companies / list_worker_traces。
+		// 次のツールは worker には【渡さない】。planner と main に残す（コンテキストを読むこと、work をまたいで振り返ることは計画の役目で、
+		// worker はインテント 1 件の実行と書き戻しだけを行う）。list_facts / list_companies / list_worker_traces。
 	}
 }
 
@@ -647,17 +647,17 @@ func (t *ToolSet) MainAgentTools() []actool.CoreTool {
 		t.graphOverview(), t.listFindings(), t.listFacts(), t.nodeDetail(),
 		t.expandDigest(), // cold-digest §6.1
 		t.getWorkerOutput(), t.getWorkerTrace(), t.searchAllWorkerTraces(), t.addHint(), t.addIntent(),
-		// steer_work：人可对某条正在运行的意图(work)实时注入纠偏指令（不打断、不丢进展）。
+		// steer_work。人は、実行中のインテント（work）へ、軌道修正の指示をリアルタイムで入れられる（中断せず、進捗も失わない）。
 		t.steerWorkTool(),
-		// set_goals：人可在运行时给本任务补一个新的最终目标（规划者据此重判是否达成）。
+		// set_goals。人は実行時に、このタスクへ新しい最終目標を足せる（プランナーはそれに基づいて達成を判定し直す）。
 		t.setGoals(),
-		// set_constraints：人可在运行时给本任务补/改操作约束（allow/deny），约束 planner/worker 的探索边界。
+		// set_constraints。人は実行時に、このタスクへ操作の制約（allow/deny）を足し、または変え、planner と worker の探索の境界を定める。
 		t.setConstraints(),
 		// asset management (handlers guard nil store internally)
 		t.insertAssets(), t.addCompanyScope(), t.listAssets(),
 		t.addFinding(), t.recordFact(),
 		t.addTaskScope(),
-		// list_untested_assets：按需查本任务范围内未测资产(类型+分页)，自行决定补测。
+		// list_untested_assets。必要に応じて、このタスクの範囲内の未テスト資産を調べる（種別とページ）。追加テストは自分で決める。
 		t.listUntestedAssets(),
 	}
 }

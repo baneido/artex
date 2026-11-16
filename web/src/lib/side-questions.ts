@@ -41,9 +41,9 @@ async function request<T>(path: string, method = "GET", body?: unknown): Promise
 }
 
 export const sideAPI = {
-  // 历史必须归一化后再交给调用方:items 一旦不是数组,消费端的 setState updater 会抛,
-  // 而 React 会把 updater 的异常推迟到 render 阶段重抛 —— 那时调用方的 catch 已经够不着,
-  // 整页直接被错误边界接管。
+  // 履歴は正規化してから呼び出し側に渡す。items が配列でないと、消費側の setState updater が例外を出す。
+  // React はその例外を render 段階まで遅らせて投げ直す。その時点では呼び出し側の catch は届かない。
+  // ページ全体がエラー境界に渡る。
   history: async (parent: string, before = 0) => {
     const data = await request<Partial<SideHistory>>(`${parent}/side-questions?before=${before}`);
     return {

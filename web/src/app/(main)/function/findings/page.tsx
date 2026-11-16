@@ -67,14 +67,14 @@ import {
 
 const FINDING_LIST_PREFERENCE_KEY = "artex_finding_list_preferences";
 
-// 列表视图:flat = 跨任务平铺大表(默认);grouped = 按任务分组折叠;
-// asset = 左侧资产树 + 右侧该子树下的发现。
+// 一覧ビュー。flat はタスクをまたいだフラットな大表（既定）。grouped はタスク別に折りたたむ。
+// asset は左側の資産ツリーと、右側のそのサブツリーの検出事項。
 type FindingView = "flat" | "grouped" | "asset";
 
 const FINDING_VIEWS: FindingView[] = ["flat", "grouped", "asset"];
 
-// 资产树的一次性快照。与另外两个视图不同,资产视图不轮询:进入视图、改筛选、
-// 或本页改动了发现之后才重新查询。
+// 資産ツリーの一回限りのスナップショット。他の2ビューと違い、資産ビューはポーリングしない。ビューに入る、フィルタを変える、
+// またはこのページで検出事項を変えたあとだけ再取得する。
 interface AssetTreeState {
   nodes: FindingAssetNode[];
   findingTotal: number;
@@ -93,7 +93,7 @@ const EMPTY_ASSET_TREE: AssetTreeState = {
   loading: false,
 };
 
-// 分组视图里每个已展开任务组自带一份分页状态,彼此独立。
+// グループビューでは、展開済みの各タスクグループがページング状態を持ち、互いに独立する。
 interface GroupFindingsState {
   items: Finding[];
   total: number;
@@ -103,7 +103,7 @@ interface GroupFindingsState {
   loading: boolean;
 }
 
-// 平铺视图的页码单独放 state(而非塞进快照),筛选一变就能连带重置并触发重新加载。
+// フラットビューのページ番号は state に単独で置く（スナップショットには入れない）。フィルタが変わると一緒にリセットし、再読み込みを起こす。
 interface FlatFindingsState {
   items: Finding[];
   total: number;
@@ -166,7 +166,7 @@ export default function FindingsPage() {
   const activeFilterFingerprint = React.useRef(filterFingerprint);
   activeFilterFingerprint.current = filterFingerprint;
 
-  // 一个轻量请求覆盖所有行/视图，避免逐行拉取完整复测历史；等待上一轮完成再轮询。
+  // 1つの軽いリクエストで全行と全ビューをカバーし、行ごとの完全な再テスト履歴の取得を避ける。前の周回が終わってからポーリングする。
   React.useEffect(() => {
     let disposed = false;
     let failed = false;
@@ -234,7 +234,7 @@ export default function FindingsPage() {
     return () => window.clearTimeout(timer);
   }, [search]);
 
-  // setFindings 同时改写两个视图缓存里的同一条发现,切换视图不会看到过期状态。
+  // setFindings は2つのビューキャッシュにある同じ検出事項を同時に書き換える。ビューを切り替えても古い状態は見えない。
   const setFindings = React.useCallback((update: (current: Finding[]) => Finding[]) => {
     setFlat((current) => ({ ...current, items: update(current.items) }));
     setGroupFindings((current) => {
@@ -246,9 +246,9 @@ export default function FindingsPage() {
     });
   }, []);
 
-  // 勾选导出:按 finding_id(独立表 id)记选中项,跨页保留。
+  // 選択してエクスポート。finding_id（独立テーブルの id）で選択を覚え、ページをまたいで残す。
   const [selectedIds, setSelectedIds] = React.useState<Set<string>>(() => new Set());
-  // 导出弹窗状态:范围(当前筛选/全部/选中) × 格式(md 单文件/md 分文件 zip/csv/json)。
+  // エクスポートダイアログの状態。範囲（現在のフィルタ、すべて、選択中）と形式（md 単一ファイル、md 分割 zip、csv、json）。
   const [exportOpen, setExportOpen] = React.useState(false);
   const [exportScope, setExportScope] = React.useState<"filtered" | "all" | "selected">("filtered");
   const [exportFormat, setExportFormat] = React.useState<"md-single" | "md-zip" | "csv" | "json">("md-single");
@@ -274,7 +274,7 @@ export default function FindingsPage() {
     });
   }, []);
 
-  // 打开导出弹窗时,若有勾选项则默认范围切到「选中」,否则「当前筛选」。
+  // エクスポートダイアログを開くとき、選択があれば既定の範囲を「選択中」にし、無ければ「現在のフィルタ」にする。
   function openExport() {
     setExportScope(selectedIds.size > 0 ? "selected" : "filtered");
     setExportOpen(true);
@@ -311,10 +311,10 @@ export default function FindingsPage() {
   groupFindingsRef.current = groupFindings;
   visibleGroupKeysRef.current = new Set(groups.map(findingGroupKey));
 
-  // 资产视图右侧列表 = 平铺列表 + 选中子树的筛选,所以两个视图共用一份列表状态。
+  // 資産ビュー右側の一覧は、フラット一覧に選択中サブツリーのフィルタを足したもの。2つのビューは一覧状態を共有する。
   const activeAssetScope = view === "asset" ? assetScope : null;
 
-  // loadFlat 拉取平铺视图的当前页;task 筛选交给后端,与分组视图共用同一批筛选条件。
+  // loadFlat はフラットビューの現在ページを取る。task のフィルタはバックエンドに渡し、グループビューと同じ絞り込み条件を使う。
   const loadFlat = React.useCallback(async () => {
     const requestFilter = filterFingerprint;
     if (activeFilterFingerprint.current !== requestFilter) return;
@@ -341,8 +341,8 @@ export default function FindingsPage() {
     }
   }, [activeAssetScope, filterFingerprint, flatPage, flatPageSize, severity, status, vulnclass, task, query, sort]);
 
-  // loadAssetTree 取整棵资产树。树不随选中节点变化(否则选一下就塌成一条链),
-  // 所以这里不带 assetScope。
+  // loadAssetTree は資産ツリー全体を取る。ツリーは選択ノードでは変わらない（変わると、選ぶたびに1本の鎖に潰れる）。
+  // そのためここでは assetScope を付けない。
   const loadAssetTree = React.useCallback(async () => {
     const requestFilter = filterFingerprint;
     if (activeFilterFingerprint.current !== requestFilter) return;
@@ -473,17 +473,17 @@ export default function FindingsPage() {
     [expandedGroups, groupFindings, loadGroup],
   );
 
-  // 行内改动后刷新当前视图:平铺视图重拉当前页,分组视图刷组头 + 该发现所在的组。
+  // 行内の変更後に現在のビューを更新する。フラットビューは現在ページを取り直し、グループビューはグループ見出しとその検出事項のグループを更新する。
   const refreshAfterMutation = React.useCallback(
     (finding: Finding, removed = false) => {
       if (view === "asset") {
-        // 资产视图不轮询,所以改完要顺带把树的计数也重新算一次。
+        // 資産ビューはポーリングしない。変更後はツリーの件数も計算し直す。
         void loadFlat();
         void loadAssetTree();
         return;
       }
       if (view === "flat") {
-        // 删空最后一页时,页码由越界修正 effect 回退并连带重新加载。
+        // 最後のページを空にする削除では、範囲外を直す effect がページ番号を戻し、一緒に再読み込みする。
         void loadFlat();
         return;
       }
@@ -508,31 +508,31 @@ export default function FindingsPage() {
     setGroupFindings({});
     setFlatPage(1);
     setFlat(EMPTY_FLAT_STATE);
-    // 筛选变了树也会变,原先选中的节点可能已经不在树里,退回「全部资产」。
+    // フィルタが変わるとツリーも変わる。以前選んだノードがツリーに無いことがあるので、「すべての資産」へ戻す。
     setAssetScope(null);
     setAssetTree(EMPTY_ASSET_TREE);
   }, [filterFingerprint]);
 
-  // 换资产节点等于换了一份结果集,回到第一页。
+  // 資産ノードを変えるのは結果集合を変えることと同じなので、1ページ目に戻る。
   React.useEffect(() => {
     void assetScope;
     setFlatPage(1);
   }, [assetScope]);
 
-  // 资产树只在进入视图 / 筛选变化时查一次(以及本页改动发现后由
-  // refreshAfterMutation 主动重拉),不做轮询。
+  // 資産ツリーは、ビューに入ったときとフィルタが変わったときだけ1回取る（このページで検出事項を変えたあとは
+  // refreshAfterMutation が自ら取り直す）。ポーリングはしない。
   React.useEffect(() => {
     if (!preferencesHydrated || view !== "asset") return;
-    void activeRetestFingerprint; // 复测结束可能改变状态筛选下的资产计数。
+    void activeRetestFingerprint; // 再テストが終わると、状態フィルタの下の資産件数が変わることがある。
     void loadAssetTree();
   }, [activeRetestFingerprint, loadAssetTree, preferencesHydrated, view]);
 
-  // 只轮询当前视图:平铺视图刷当前页,分组视图刷组头与每个已展开的组(其分页彼此独立)。
-  // 资产视图只查一次(见下面的 return),它的左树是导航结构,没必要每 5 秒重算。
-  // 等偏好水合后再发首个请求,否则会先按默认视图/筛选白拉一次。
+  // 現在のビューだけポーリングする。フラットビューは現在ページを更新し、グループビューはグループ見出しと展開済みの各グループを更新する（ページングは互いに独立）。
+  // 資産ビューは1回だけ取る（下の return を参照）。左のツリーはナビゲーション構造で、5秒ごとに計算し直す必要はない。
+  // 設定のハイドレーション後に最初のリクエストを出す。出さないと、既定のビューとフィルタで先に1回空振りする。
   React.useEffect(() => {
     if (!preferencesHydrated) return;
-    void activeRetestFingerprint; // 包括不定时轮询的资产视图，也在复测结束后刷新处置状态。
+    void activeRetestFingerprint; // タイマーでポーリングしない資産ビューも含め、再テストのあと対応状態を更新する。
     const refresh = () => {
       if (view === "flat" || view === "asset") {
         if (!flatStateRef.current.loading) void loadFlat();
@@ -629,16 +629,16 @@ export default function FindingsPage() {
     [refreshAfterMutation, setFindings, status],
   );
 
-  // 行内展开的详细报告缓存按全局稳定行键存。report 是大段 Markdown,列表查询不带它,
-  // 故展开时才按 finding_id 单独拉取一次;done 且文本为空 = 该漏洞暂无报告。
+  // 行内で開く詳細レポートのキャッシュは、グローバルに安定した行キーで持つ。report は長い Markdown で、一覧クエリはそれを含めない。
+  // そのため開いたときだけ finding_id で1回取る。done かつ本文が空なら、その脆弱性にはまだレポートが無い。
   const [reports, setReports] = React.useState<Record<string, FindingReport>>({});
 
-  // 行内可编辑缓冲:当前展开行的名称/类别/严重等级,展开时用该行数据初始化,收起清空。
-  // 单行展开,故一份缓冲即可。
+  // 行内の編集バッファ。今開いている行の名称、種別、深刻度。開くときにその行のデータで初期化し、閉じたら空にする。
+  // 開くのは1行なので、バッファは1つで足りる。
   const [edit, setEdit] = React.useState<FindingEdit | null>(null);
   const [saving, setSaving] = React.useState(false);
 
-  // toggle 展开/收起一行;新展开时初始化编辑缓冲,并(尚未取过时)按 finding_id 拉一次报告缓存。
+  // toggle は1行の開閉。新しく開くときは編集バッファを初期化し、まだ取っていなければ finding_id でレポートキャッシュを1回取る。
   const toggleRow = React.useCallback(
     (f: Finding) => {
       const key = findingRowKey(f);
@@ -660,7 +660,7 @@ export default function FindingsPage() {
     [expanded, reports],
   );
 
-  // saveEdit 保存当前展开行的名称/类别/严重等级,回写本地列表并刷新统计(类别下拉/严重计数可能变)。
+  // saveEdit は今開いている行の名称、種別、深刻度を保存し、ローカル一覧へ書き戻して統計を更新する（種別のドロップダウンと深刻度の件数が変わることがある）。
   const saveEdit = React.useCallback(
     async (f: Finding) => {
       if (!f.finding_id || !edit) return;
@@ -695,7 +695,7 @@ export default function FindingsPage() {
     [edit, refreshAfterMutation, setFindings],
   );
 
-  // deleteFinding 删除一个漏洞(需二次确认):删成功后从列表移除、收起行、刷新统计。
+  // deleteFinding は脆弱性を1件削除する（再確認が要る）。成功したら一覧から外し、行を閉じ、統計を更新する。
   const deleteFinding = React.useCallback(
     async (f: Finding) => {
       if (!f.finding_id) return;
@@ -760,8 +760,8 @@ export default function FindingsPage() {
     { label: "低", value: stats.low, tone: "text-slate-500", icon: InfoIcon },
   ];
 
-  // 导出弹窗里「当前筛选」的条数:两个视图的筛选一致,只是统计口径来源不同。
-  // 平铺与资产视图共用 flat 列表状态,分组视图的口径来自组接口的 finding_total。
+  // エクスポートダイアログの「現在のフィルタ」の件数。2つのビューのフィルタは同じで、集計の出どころだけが違う。
+  // フラットと資産ビューは flat の一覧状態を共有し、グループビューの件数はグループ API の finding_total から取る。
   const filteredTotal = view === "grouped" ? total : flat.total;
   const assetPath = React.useMemo(
     () => (view === "asset" ? assetPathOf(assetTree.nodes, assetScope) : []),
@@ -786,7 +786,7 @@ export default function FindingsPage() {
     onDelete: deleteFinding,
   };
 
-  // 平铺视图与资产视图右侧是同一张表 + 同一份分页,只是筛选条件不同。
+  // フラットビューと資産ビュー右側は同じ表と同じページングで、フィルタ条件だけが違う。
   const flatListCard = (
     <Card className="gap-0 py-0">
       <CardContent className="px-0">

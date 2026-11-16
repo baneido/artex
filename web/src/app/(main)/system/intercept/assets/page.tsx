@@ -77,7 +77,7 @@ type RuleForm = {
 
 const defaultForm = (): RuleForm => ({ enabled: true, kind: "fuzzy_domain", pattern: "", note: "" });
 
-// 前端轻校验（与后端一致：仅 exact_ip / cidr 做格式校验，其余交后端）。
+// フロントの軽い検証（バックエンドと一致。exact_ip / cidr だけ形式を検証し、残りはバックエンドに任せる）。
 function frontValidate(form: RuleForm): string | null {
   const p = form.pattern.trim();
   if (!p) return "一致させる内容を入力してください";

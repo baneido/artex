@@ -1,27 +1,27 @@
 @echo off
-rem 控制台切 UTF-8，否则本文件里的中文在 GBK 终端下是乱码。
+rem コンソールを UTF-8 にする。そうしないと、このファイルの日本語が GBK 端末では文字化けする。
 chcp 65001 >nul 2>&1
-rem ARTEX 守护启动脚本（Windows）
+rem ARTEX 常駐起動スクリプト（Windows）
 rem
-rem 用法：
-rem   start.bat                  前台运行（Ctrl-C 停止）
-rem   start.bat -addr :9000      额外参数原样透传给 artex
+rem 使い方:
+rem   start.bat                  フォアグラウンドで実行する（Ctrl-C で停止）
+rem   start.bat -addr :9000      追加の引数はそのまま artex に渡す
 rem
-rem 它只做一件事：把 artex.exe 跑起来，进程退出后按退出码决定要不要再拉起。
+rem やることは一つだけである。artex.exe を起動し、終了コードで再起動するかどうかを決める。
 rem
-rem   0      用户正常停止     -> 退出循环
-rem   75     程序请求重启     -> 立刻重跑（页面点了"一键更新"或"回滚"）
-rem   其他   崩溃             -> 退避后重跑（1->2->4…最多 60 秒）
+rem   0      ユーザーが正常に停止した -> ループを抜ける
+rem   75     プログラムが再起動を要求した -> すぐに再実行する（画面で「ワンクリックアップデート」または「ロールバック」を押した）
+rem   その他 クラッシュした            -> 待ってから再実行する（1->2->4…最大 60 秒）
 rem
-rem 下载、SHA256 校验、换装都不在这里，全部由 artex 自己在启动时完成
-rem （selfupdate 包）。脚本保持傻瓜化，详见 start.sh 顶部的说明。
+rem ダウンロード、SHA256 の検証、入れ替えはここでは行わない。すべて artex 自身が起動時に完了する
+rem （selfupdate パッケージ）。スクリプトは単純なままにする。詳しくは start.sh 先頭の説明を参照する。
 
 setlocal enabledelayedexpansion
 cd /d "%~dp0"
 
 set "BIN=artex.exe"
 if not exist "%BIN%" (
-	echo [artex] 找不到可执行文件 %BIN% 1>&2
+	echo [artex] 実行ファイル %BIN% が見つかりません 1>&2
 	exit /b 1
 )
 
@@ -34,19 +34,19 @@ set /a delay=1
 set "code=!ERRORLEVEL!"
 
 if "!code!"=="0" (
-	echo [artex] 正常退出
+	echo [artex] 正常に終了しました
 	exit /b 0
 )
 
 if "!code!"=="%RESTART_CODE%" (
-	rem 更新/回滚已就绪：重跑后 artex 会在启动时完成换装。
-	echo [artex] 请求重启（应用新版本）…
+	rem アップデートまたはロールバックの準備ができている。再実行後、artex は起動時に入れ替えを完了する。
+	echo [artex] 再起動を要求しました（新しいバージョンを適用します）…
 	set /a delay=1
 	goto loop
 )
 
-echo [artex] 异常退出 ^(code=!code!^)，!delay!s 后重启 1>&2
-rem timeout 在被重定向的控制台里会失败，用 ping 兜底（延时 N 秒需要 N+1 次）。
+echo [artex] 異常終了しました ^(code=!code!^)。!delay! 秒後に再起動します 1>&2
+rem リダイレクトされたコンソールでは timeout が失敗する。ping で代替する（N 秒待つには N+1 回必要である）。
 set /a pings=!delay!+1
 ping -n !pings! 127.0.0.1 >nul 2>&1
 set /a delay=!delay!*2

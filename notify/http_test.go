@@ -9,12 +9,12 @@ import (
 	"testing"
 )
 
-// 本文件覆盖 doJSON 的 HTTP 层错误分级。
+// このファイルは doJSON の HTTP 層のエラー分類を覆う。
 //
-// 为什么要单独测：各渠道适配器只管平台自己的业务错误码（钉钉 errcode、
-// 飞书 code、Telegram ok 字段），而**HTTP 层**的分级是 doJSON 统一做的，
-// 两者是两道独立的防线。少了这道，一个返回 503 的中转网关会被当成永久失败、
-// 直接放弃重试；而一个 403 会被当成可重试、白白退避三轮。
+// 別に測る理由: 各チャネルアダプタが扱うのはプラットフォーム自身の業務エラーコード（DingTalk の errcode、
+// Feishu の code、Telegram の ok フィールド）で、HTTP 層の分類は doJSON がまとめて行う。
+// 両者は独立した 2 つの防御だ。これが無いと、503 を返す中継ゲートウェイを永続的な失敗とみなし、
+// 再試行をすぐ放棄する。403 は再試行できるとみなされ、退避を 3 周むだにする。
 
 func replyServer(t *testing.T, status int, body string) *httptest.Server {
 	t.Helper()
@@ -33,16 +33,16 @@ func TestDoJSONClassifiesHTTPStatus(t *testing.T) {
 		status    int
 		permanent bool
 	}{
-		{"200 成功不算错误", 200, false},
-		{"429 限流可重试", 429, false},
-		{"408 请求超时可重试", 408, false},
-		{"500 服务端错误可重试", 500, false},
-		{"502 网关错误可重试", 502, false},
-		{"503 服务不可用可重试", 503, false},
-		{"400 参数错误永久失败", 400, true},
-		{"401 鉴权失败永久失败", 401, true},
-		{"403 禁止访问永久失败", 403, true},
-		{"404 地址不存在永久失败", 404, true},
+		{"200 成功はエラーではない", 200, false},
+		{"429 制限は再試行できる", 429, false},
+		{"408 リクエストタイムアウトは再試行できる", 408, false},
+		{"500 サーバーエラーは再試行できる", 500, false},
+		{"502 ゲートウェイエラーは再試行できる", 502, false},
+		{"503 サービス利用不可は再試行できる", 503, false},
+		{"400 パラメータ誤りは永続的な失敗", 400, true},
+		{"401 認証失敗は永続的な失敗", 401, true},
+		{"403 アクセス禁止は永続的な失敗", 403, true},
+		{"404 アドレス不存在は永続的な失敗", 404, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -50,70 +50,70 @@ func TestDoJSONClassifiesHTTPStatus(t *testing.T) {
 			_, err := doJSON(context.Background(), "GET", srv.URL, nil, nil)
 			if tc.status < 300 {
 				if err != nil {
-					t.Fatalf("2xx 不应报错: %v", err)
+					t.Fatalf("2xx はエラーになってはいけません: %v", err)
 				}
 				return
 			}
 			if err == nil {
-				t.Fatal("非 2xx 应报错")
+				t.Fatal("2xx 以外はエラーになる必要があります")
 			}
 			if got := IsPermanent(err); got != tc.permanent {
-				t.Fatalf("HTTP %d 的 permanent 判定错误：期望 %v 得到 %v (%v)",
+				t.Fatalf("HTTP %d の permanent 判定が違います。期待 %v 実際 %v (%v)",
 					tc.status, tc.permanent, got, err)
 			}
-			// 状态码必须出现在错误里，否则用户无从判断是自己配错了还是对端挂了。
-			// 断言数字而不是 Go 的英文 StatusText：本包的文案是中文的
-			// （与项目其它部分一致），数字才是语言无关、可稳定断言的部分。
+			// ステータスコードはエラーに出る必要がある。出ないと、ユーザーは自分の設定ミスか相手の障害かを判断できない。
+			// 断言するのは数字であり、Go の英語 StatusText ではない。このパッケージの文面は日本語で、
+			// 数字だけが言語に依存せず、安定して断言できる。
 			if !strings.Contains(err.Error(), strconv.Itoa(tc.status)) {
-				t.Errorf("错误信息应带上 HTTP 状态码 %d，得到 %v", tc.status, err)
+				t.Errorf("エラー情報には HTTP ステータス %d が必要です。実際は %v", tc.status, err)
 			}
 		})
 	}
 }
 
-// TestDoJSONIncludesResponseSnippet 覆盖 snippet：对端返回的错误说明要带回来，
-// 否则用户只知道「失败了」，不知道对端为什么拒绝。
+// TestDoJSONIncludesResponseSnippet は snippet を覆う。相手が返したエラー説明は持ち帰る。
+// 持ち帰らないと、ユーザーは「失敗した」としか知らず、相手が拒否した理由が分からない。
 func TestDoJSONIncludesResponseSnippet(t *testing.T) {
 	srv := replyServer(t, 400, `{"error":"invalid webhook token"}`)
 	_, err := doJSON(context.Background(), "GET", srv.URL, nil, nil)
 	if err == nil {
-		t.Fatal("应报错")
+		t.Fatal("エラーになる必要があります")
 	}
 	if !strings.Contains(err.Error(), "invalid webhook token") {
-		t.Errorf("错误信息应带回对端的说明，得到 %v", err)
+		t.Errorf("エラー情報には相手の説明が必要です。実際は %v", err)
 	}
 }
 
-// TestDoJSONSnippetIsSingleLineAndBounded 约束 snippet 的形态：
-// 它对端响应会原样进 last_error 列与前端表格，多行/超长会破坏排版与载荷。
+// TestDoJSONSnippetIsSingleLineAndBounded は snippet の形を制約する。
+// 相手の応答はそのまま last_error 列とフロントの表に入る。複数行や長すぎる文はレイアウトとペイロードを壊す。
 func TestDoJSONSnippetIsSingleLineAndBounded(t *testing.T) {
-	// 带换行、制表符与 5000 字符超长内容的响应。
+	// 改行、タブ、5000 文字の長い内容を含む応答。
 	long := strings.Repeat("x", 5000)
 	srv := replyServer(t, 500, "line1\nline2\r\n\tline3 "+long)
 	_, err := doJSON(context.Background(), "GET", srv.URL, nil, nil)
 	if err == nil {
-		t.Fatal("应报错")
+		t.Fatal("エラーになる必要があります")
 	}
 	msg := err.Error()
 	if strings.ContainsAny(msg, "\r\n\t") {
-		t.Errorf("错误信息应压成单行，得到 %q", msg)
+		t.Errorf("エラー情報は 1 行に畳む必要があります。実際は %q", msg)
 	}
-	// snippet 上限 200 字符 + 固定前缀，总量必须远小于原始响应。
+	// snippet の上限は 200 文字に固定の接頭辞で、合計は元の応答よりずっと小さい必要がある。
 	if len(msg) > 400 {
-		t.Errorf("错误信息过长（%d 字节），应被 snippet 截断: %q", len(msg), msg)
+		t.Errorf("エラー情報が長すぎます（%d バイト）。snippet で切る必要があります: %q", len(msg), msg)
 	}
 }
 
-// TestDoJSONRejectsOversizedResponse 确认读取有上限：对端异常返回超大内容时
-// 不能把整个响应读进内存（投递历史里每一条都会存一份 last_error）。
+// TestDoJSONRejectsOversizedResponse は、読み取りに上限があることを確認する。相手が異常に巨大な内容を返したとき、
+// 応答全体をメモリへ読んではいけない（配信履歴の 1 件ごとに last_error を 1 つ保存する）。
 func TestDoJSONRejectsOversizedResponse(t *testing.T) {
 	huge := strings.Repeat("A", 1<<20) // 1 MiB
 	srv := replyServer(t, 400, huge)
 	_, err := doJSON(context.Background(), "GET", srv.URL, nil, nil)
 	if err == nil {
-		t.Fatal("应报错")
+		t.Fatal("エラーになる必要があります")
 	}
 	if len(err.Error()) > 400 {
-		t.Errorf("超大响应应被限长读取并截断，错误信息长度 %d", len(err.Error()))
+		t.Errorf("巨大な応答は長さを限って読み、切る必要があります。エラー情報の長さは %d", len(err.Error()))
 	}
 }

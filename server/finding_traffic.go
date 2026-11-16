@@ -274,7 +274,7 @@ func readEvidencePreview(store *evidence.Store, snapshot db.TrafficEvidenceSnaps
 	out = evidencePreview{Offset: offset, Total: total, NextOffset: offset + int64(len(raw)), Truncated: offset+int64(len(raw)) < total,
 		Binary: bytes.IndexByte(raw, 0) >= 0 || (offset == 0 && !utf8.Valid(raw))}
 	if out.Binary {
-		out.Content = fmt.Sprintf("[二进制正文，%d 字节；请下载查看]", total)
+		out.Content = fmt.Sprintf("[バイナリ本文、%d バイト。ダウンロードして確認してください]", total)
 	} else {
 		out.Content = string(bytes.ToValidUTF8(raw, []byte("�")))
 	}

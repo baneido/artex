@@ -75,11 +75,11 @@ type Server struct {
 	chatCancel map[string]context.CancelCauseFunc
 
 	// triggerQ buffers P3 trigger fires PER AGENT. A per-agent "pump" launches runs up
-	// to a concurrency limit derived from the agent's策略: serial → limit 1 (+ optional
+	// to a concurrency limit derived from the agent's方針: serial → limit 1 (+ optional
 	// merge); parallel → limit = trigger_max_parallel (0=∞), no merge. triggerActive
 	// counts in-flight runs per agent (replaces a boolean drain flag); a run's
 	// completion decrements it and re-pumps to fill the freed slot. triggerCfg caches
-	// the agent's last-read策略 so the pump never queries the DB while holding queueMu.
+	// the agent's last-read方針 so the pump never queries the DB while holding queueMu.
 	// Distinct agents always run concurrently. Queue is in-memory (matches chatBusy); a
 	// restart drops pending fires — the scheduler re-fires from watermarks next tick.
 	queueMu       sync.Mutex
@@ -102,7 +102,7 @@ type Server struct {
 	provByProfile map[int64]*provEntry
 	provCacheGen  uint64
 
-	// llmHealth is the process-wide circuit-breaker state for LLM failover (轮询).
+	// llmHealth is the process-wide circuit-breaker state for LLM failover (フェイルオーバー).
 	// It deliberately lives OUTSIDE the provider caches: rebuilding the chain
 	// (saving an unrelated profile, flipping a setting) must not erase what we
 	// learned about which backends are out of credit / rate-limited.
@@ -133,10 +133,10 @@ type provEntry struct {
 type triggeredRun struct {
 	agentKey  string
 	title     string
-	message   string // 事件正文(触发语 + 工具/入参/返回等);不含任务描述/目标头
+	message   string // イベント本文（トリガー文とツール、引数、戻り値など）。タスクの説明と目標のヘッダは含まない
 	taskID    int64  // source task for finding/goal triggers; 0 for interval/none
-	taskDesc  string // 任务描述(任务级,同任务相同);合并时只渲染一次
-	taskGoal  string // 任务目标(任务级,同任务相同);合并时只渲染一次
+	taskDesc  string // タスクの説明（タスク単位。同じタスクでは同じ）。まとめるときは 1 回だけ描画する
+	taskGoal  string // タスクの目標（タスク単位。同じタスクでは同じ）。まとめるときは 1 回だけ描画する
 	mergeable bool   // true for finding/goal event triggers (merge by taskID)
 }
 
@@ -152,8 +152,8 @@ func New(ctx context.Context, m *Manager, skillDir string, dataDir string, keyDi
 		provByProfile:  map[int64]*provEntry{}, llmHealth: newLLMHealthRegistry(m.pg),
 		taskAgents: map[string]*taskAgentBundle{}, archiveWake: make(chan struct{}, 1)}
 	s.initSideQuestions()
-	// 熔断阈值/冷却是失败路径上的热参数，启动时把全局重试策略推给 Registry 一次；
-	// 之后每次保存策略再推一次（saveLLMRetryPolicy）。
+	// サーキットブレーカーのしきい値と冷却は失敗経路の熱いパラメータである。起動時に全体の再試行方針を Registry へ 1 回渡す。
+	// その後、方針を保存するたびに、もう 1 回渡す（saveLLMRetryPolicy）。
 	s.applyRetryPolicy()
 	// Every task uses a stable task router. An empty explicit chain is resolved by
 	// that router through Agent bindings and then the global provider, so adding a
@@ -172,7 +172,7 @@ func New(ctx context.Context, m *Manager, skillDir string, dataDir string, keyDi
 		defer s.cfgMu.Unlock()
 		return s.llmOn
 	})
-	// Wire DB-stored prompt templates into the agents (新版方案 §3.3 / §5a). With no
+	// Wire DB-stored prompt templates into the agents (新しい方式 §3.3 / §5a). With no
 	// override row, agents keep their built-in defaults — behavior is unchanged.
 	if m.pg != nil {
 		agent.PromptOverride = func(key string) (string, bool) {
@@ -217,19 +217,19 @@ func New(ctx context.Context, m *Manager, skillDir string, dataDir string, keyDi
 			}
 			return a.TaskTimeoutWrapupMaxTurns, true
 		}
-		wireAgentAugment(m.pg, s.skillDir, s.hostTools) // 可见 skills/MCP + 流量/编排 host 工具装配进 agent 工具集
+		wireAgentAugment(m.pg, s.skillDir, s.hostTools) // 見える skills/MCP と、トラフィックと編成の host ツールを、agent のツールセットへ組み込む
 		domainReg := buildDomainReg(m.Assets())
-		wireTools(m.pg, domainReg) // 内置工具表：按 agent 过滤 + 覆盖描述/schema + 注入默认值
-		seedPrompts(m.pg)          // 内置 agent 默认提示词正文播种进 agent_prompts(仅空时)
-		s.seedOrchestrationTools() // P2 跨任务编排工具 seed 进 tools 表(可按 agent 绑定)
+		wireTools(m.pg, domainReg) // 組み込みツール表。agent で絞り、説明と schema を上書きし、デフォルト値を注入する
+		seedPrompts(m.pg)          // 組み込み agent のデフォルトプロンプト本文を agent_prompts へ入れる（空のときだけ）
+		s.seedOrchestrationTools() // P2 のタスク横断の編成ツールを tools テーブルへ seed する（agent ごとに関連付けできる）
 		if err := s.seedFindingRetester(); err != nil {
 			log.Printf("[retester] seed: %v", err)
 		}
 		go s.evidenceStore().RunGC(s.ctx)
-		s.seedPythonInterpreter()     // 自定义脚本工具:开机检测 python 解释器入库(仅空时)
-		go newScheduler(s).Run(s.ctx) // P3 触发器调度(定时/finding/目标事件),仅自定义 agent
-		// 漏洞 IM 推送投递引擎。与 Scheduler 并列但独立：推送的实时性要求(3s)
-		// 与触发器的业务节奏不同，且两者失败互不牵连——推送卡住不该影响 agent 触发。
+		s.seedPythonInterpreter()     // カスタムスクリプトのツール。起動時に python インタプリタを検出して保存する（空のときだけ）
+		go newScheduler(s).Run(s.ctx) // P3 のトリガーのスケジューラ（時刻、finding、目標イベント）。カスタム agent だけ
+		// 脆弱性の IM 通知の配信エンジン。Scheduler と並ぶが独立している。通知の即時性（3s）は
+		// トリガーの業務の間隔と違う。失敗も互いに引きずらない。通知が止まっても agent のトリガーには影響しない。
 		go newNotifier(s).Run(s.ctx)
 		// Fill the tool cache for any enabled MCP that has none yet (notably the
 		// seeded browser MCP on first run). Async so it never blocks startup.
@@ -255,7 +255,7 @@ func New(ctx context.Context, m *Manager, skillDir string, dataDir string, keyDi
 	s.restoreTaskRuntimes()
 	go s.reconcileConcurrency()
 	s.startTaskArchiveWorker()
-	s.wireInterceptReviewer() // LLM 兜底审批:未命中拦截规则的命令交给模型判定
+	s.wireInterceptReviewer() // LLM の最終承認。インターセプト規則に当たらないコマンドをモデルが判定する
 	return s
 }
 
@@ -270,13 +270,13 @@ func (s *Server) restoreTaskRuntimes() {
 		// clear stale 'running' intents from a prior crash/restart (no live worker
 		// owns them) so they re-claim instead of spinning forever in the UI.
 		if n, _ := t.Store.ResetRunningIntents(); n > 0 {
-			log.Printf("[engine] task %s 重置 %d 个残留 running 意图为 open", t.ID, n)
+			log.Printf("[engine] task %s の残っていた running インテント %d 件を open に戻しました", t.ID, n)
 		}
 		if lifecycle.Paused {
 			s.engine.Pause(t.ID, agent.AbortPausedOnReload)
 		}
-		// 任务级超时:为每个未终态、带 timeout 的任务起 deadline 协调器,独立于 planner/worker
-		// loop——非活跃任务重启后也能在到点后被收尾(deadline 已过则立即走收尾时序)。
+		// タスク単位のタイムアウト。終態でなく timeout のあるタスクごとに deadline コーディネーターを起動する。planner/worker とは独立した
+		// loop。非アクティブなタスクも再起動後、時刻が来たら終了処理できる（deadline を過ぎていればすぐ終了処理へ進む）。
 		if !isTerminalStatus(lifecycle.Status) {
 			s.engine.startDeadlineCoordinator(s.ctx, t)
 		}
@@ -349,12 +349,12 @@ func (s *Server) saveLLMConfig(cfg agent.Config) error {
 	// (anthropic / openai / openai-responses), matching the DB CHECK constraint.
 	format := cfg.Provider()
 	var id int64
-	// 这个 legacy 端点的请求体不含轮询/收发/输出上限参数,故把库里已存的值原样带回 —
-	// 否则每次保存都会把 profile 的 priority、pool_exclude、streaming 以及输出上限
-	// (max_tokens / max_tokens_field)悄悄重置成零值。
+	// この legacy エンドポイントのリクエストボディに、フェイルオーバー、送受信、出力上限のパラメータはない。DB に保存済みの値をそのまま戻す。
+	// そうしないと、保存のたびに profile の priority、pool_exclude、streaming、および出力上限が
+	// (max_tokens / max_tokens_field)静かにゼロへ戻る。
 	var priority int
 	var poolExclude bool
-	streaming := true // 旧库/新建默认流式
+	streaming := true // 既存 DB と新規のデフォルトはストリーム
 	var maxTokens int
 	var maxTokensField string
 	var sessionHeaderKey string
@@ -450,9 +450,9 @@ func (s *Server) applyLLM(cfg agent.Config) error {
 	s.cfgMu.Lock()
 	s.llmDirect = prov
 	s.cfgMu.Unlock()
-	// LLM 轮询(默认关):把激活配置包进故障转移链,当前配置不可用时自动切下一个。
-	// 只影响「走全局激活配置」的这条路径——agent 绑定 / 任务 pin 的走 providerForProfile,
-	// 默认仍然独占该配置(见 poolForBinding)。关闭或无备选时返回原 provider,行为不变。
+	// LLM のフェイルオーバー（デフォルトはオフ）。有効な設定をフェイルオーバーのチェーンに入れ、現在の設定が使えないときは次へ自動で切り替える。
+	// 影響するのは「全体で有効な設定」を使う経路だけである。agent の関連付けとタスクの pin は providerForProfile を通り、
+	// デフォルトではその設定専用のままである（poolForBinding を参照）。オフ、または代替がないときは元の provider を返し、挙動は変わらない。
 	if act, err := s.m.pg.ActiveProfile(); err == nil && act != nil {
 		prov = s.poolForActive(act.ID, prov, cfg)
 	}
@@ -468,14 +468,14 @@ func (s *Server) applyLLM(cfg agent.Config) error {
 	// own via agentsForTask (task-routed), so nothing is constructed for it here.
 	s.cfgMu.Lock()
 	// chat agent serves MANY custom agents by key → it holds the GLOBAL opts
-	// (backend/key) and gates Enabled per-conversation-agent at Chat time. 对话始终用激活配置。
+	// (backend/key) and gates Enabled per-conversation-agent at Chat time. 会話は常に有効な設定を使う。
 	s.chatAgent = agent.NewChatAgent(prov, cfg.Model, s.m.dir, tx, win) // chat page runner
 	s.chatAgent.SetProxy(s.m.ProxyAddr(), s.m.ProxyCACert())
 	s.chatAgent.SetWebSearch(s.m.WebSearchOpts())
 	s.chatAgent.SetGuard(s.chatGuard())
 	s.chatAgent.SetNonStreaming(nonStreamingResolver(cfg))
 	s.chatAgent.SetMaxTokens(maxTokensResolver(cfg))
-	s.chatAgent.SetNoaEnabled(s.m.NoaCompactionEnabled) // 实验功能:noa 上下文压缩(每 run 读)
+	s.chatAgent.SetNoaEnabled(s.m.NoaCompactionEnabled) // 実験機能。noa のコンテキスト圧縮（run ごとに読む）
 	s.llmProv = prov
 	s.llmCfg = cfg
 	s.llmOn = true
@@ -529,7 +529,7 @@ func (s *Server) effectiveProfileForAgent(agentKey string, pinID *int64) *int64 
 // binding or this conversation's chosen profile first, the global active config
 // only as a fallback. Both the send precheck and the background runner MUST use
 // this — resolving differently in the two paths is how a conversation that had
-// picked a valid profile still got rejected with "LLM 未配置" when no global
+// picked a valid profile still got rejected with "LLM が未設定です" when no global
 // config was active.
 func (s *Server) resolveChatAgent(c *db.Conversation) *agent.ChatAgent {
 	ca := s.chatAgentRef()
@@ -616,7 +616,7 @@ func (s *Server) chatAgentForProfile(id int64) *agent.ChatAgent {
 	ca.SetGuard(s.chatGuard())
 	ca.SetNonStreaming(nonStreamingResolver(cfg))
 	ca.SetMaxTokens(maxTokensResolver(cfg))
-	ca.SetNoaEnabled(s.m.NoaCompactionEnabled) // 实验功能:noa 上下文压缩(每 run 读)
+	ca.SetNoaEnabled(s.m.NoaCompactionEnabled) // 実験機能。noa のコンテキスト圧縮（run ごとに読む）
 	s.profMu.Lock()
 	if ex := s.profChatAgents[id]; ex != nil { // lost the race → keep the winner
 		ca = ex
@@ -663,8 +663,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/logs/history", s.getLogsHistory)
 	mux.HandleFunc("GET /api/logs/stream", s.streamLogs)
 
-	// 页面一键更新。走的是默认的 JWT 鉴权（auth.go 只放行 /api/auth/* 和
-	// /api/health），所以这几个改动程序自身的接口天然需要登录。
+	// 画面からのワンクリック更新。デフォルトの JWT 認証を通る（auth.go が通すのは /api/auth/* と
+	// /api/health だけ）。プログラム自身を変えるこれらの API は、もともとログインが要る。
 	mux.HandleFunc("GET /api/update/check", s.updateCheck)
 	mux.HandleFunc("POST /api/update/apply", s.updateApply)
 	mux.HandleFunc("POST /api/update/rollback", s.updateRollback)
@@ -684,7 +684,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/tasks/{id}", s.getTask)
 	mux.HandleFunc("PATCH /api/tasks/{id}", s.updateTaskMetadata)
 	mux.HandleFunc("PATCH /api/tasks/{id}/category", s.updateTaskCategory)
-	// 任务级资产拦截/允许规则
+	// タスク単位の資産インターセプトと許可のルール
 	mux.HandleFunc("GET /api/tasks/{id}/intercept-rules", s.taskInterceptListRules)
 	mux.HandleFunc("POST /api/tasks/{id}/intercept-rules", s.taskInterceptCreateRule)
 	mux.HandleFunc("PUT /api/tasks/{id}/intercept-rules/{rid}", s.taskInterceptUpdateRule)
@@ -706,7 +706,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/tasks/{id}/assets/{assetID}", s.detachTaskAsset)
 	mux.HandleFunc("GET /api/tasks/{id}/intent-assets", s.taskIntentAssets)
 
-	// 工作空间文件管理器（针对 workDir）
+	// ワークスペースのファイルマネージャ（workDir 向け）
 	mux.HandleFunc("GET /api/workspace/list", s.wsList)
 	mux.HandleFunc("GET /api/workspace/read", s.wsRead)
 	mux.HandleFunc("POST /api/workspace/write", s.wsWrite)
@@ -717,21 +717,21 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/tasks/{id}/scope", s.taskScopeList)
 	mux.HandleFunc("POST /api/tasks/{id}/scope", s.taskScopeAdd)
 	mux.HandleFunc("DELETE /api/tasks/{id}/scope/{sid}", s.taskScopeDelete)
-	mux.HandleFunc("GET /api/tasks/{id}/goals", s.listGoals)                       // 目标管理:列出本任务全部目标
-	mux.HandleFunc("POST /api/tasks/{id}/goals", s.addGoal)                        // 目标管理:人工新增目标(复活任务)
-	mux.HandleFunc("PATCH /api/tasks/{id}/goals/{gid}", s.editGoal)                // 目标管理:修改目标(复活任务)
-	mux.HandleFunc("DELETE /api/tasks/{id}/goals/{gid}", s.deleteGoal)             // 目标管理:硬删除目标(不复活)
-	mux.HandleFunc("GET /api/tasks/{id}/constraints", s.listConstraints)           // 约束管理:列出本任务操作约束
-	mux.HandleFunc("POST /api/tasks/{id}/constraints", s.addConstraint)            // 约束管理:新增约束(不通知 planner)
-	mux.HandleFunc("PATCH /api/tasks/{id}/constraints/{cid}", s.editConstraint)    // 约束管理:修改约束
-	mux.HandleFunc("DELETE /api/tasks/{id}/constraints/{cid}", s.deleteConstraint) // 约束管理:删除约束
+	mux.HandleFunc("GET /api/tasks/{id}/goals", s.listGoals)                       // 目標管理。このタスクの目標をすべて出す
+	mux.HandleFunc("POST /api/tasks/{id}/goals", s.addGoal)                        // 目標管理。目標を人手で追加する（タスクを再開する）
+	mux.HandleFunc("PATCH /api/tasks/{id}/goals/{gid}", s.editGoal)                // 目標管理。目標を変更する（タスクを再開する）
+	mux.HandleFunc("DELETE /api/tasks/{id}/goals/{gid}", s.deleteGoal)             // 目標管理。目標を物理削除する（再開しない）
+	mux.HandleFunc("GET /api/tasks/{id}/constraints", s.listConstraints)           // 制約管理。このタスクの操作制約を出す
+	mux.HandleFunc("POST /api/tasks/{id}/constraints", s.addConstraint)            // 制約管理。制約を追加する（planner には通知しない）
+	mux.HandleFunc("PATCH /api/tasks/{id}/constraints/{cid}", s.editConstraint)    // 制約管理。制約を変更する
+	mux.HandleFunc("DELETE /api/tasks/{id}/constraints/{cid}", s.deleteConstraint) // 制約管理。制約を削除する
 	mux.HandleFunc("POST /api/tasks/{id}/control", s.control)
 	mux.HandleFunc("PUT /api/tasks/{id}/llm", s.updateTaskLLMProfiles)
 	mux.HandleFunc("GET /api/tasks/{id}/llm/resolution", s.taskLLMResolutionHandler)
 	mux.HandleFunc("POST /api/tasks/{id}/intents/{iid}/control", s.controlIntent)
 	mux.HandleFunc("POST /api/tasks/{id}/intents/{iid}/messages", s.sendWorkerMessage)
-	mux.HandleFunc("POST /api/tasks/{id}/intents/{iid}/rerun", s.rerunIntent)    // 重跑单条 blocked/exhausted/stopped 意图
-	mux.HandleFunc("POST /api/tasks/{id}/intents/rerun-blocked", s.rerunBlocked) // 批量重跑本任务全部 blocked 意图
+	mux.HandleFunc("POST /api/tasks/{id}/intents/{iid}/rerun", s.rerunIntent)    // blocked/exhausted/stopped のインテントを 1 件再実行する
+	mux.HandleFunc("POST /api/tasks/{id}/intents/rerun-blocked", s.rerunBlocked) // このタスクの blocked インテントをまとめて再実行する
 	mux.HandleFunc("POST /api/active", s.setActive)
 
 	mux.HandleFunc("GET /api/llm", s.getLLM)
@@ -779,7 +779,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/exploration/tokens", s.tokenStats)
 	mux.HandleFunc("GET /api/tokens/daily", s.tokenDailyStats)
 	mux.HandleFunc("GET /api/tokens/conversations", s.conversationTokens)
-	mux.HandleFunc("GET /api/tokens/usage", s.pgUsageStats) // 全局 llm_usage 聚合（仪表盘新版视图）
+	mux.HandleFunc("GET /api/tokens/usage", s.pgUsageStats) // 全体の llm_usage 集計（ダッシュボードの新しいビュー）
 
 	mux.HandleFunc("GET /api/audit", s.getAudit)
 	mux.HandleFunc("POST /api/gc", s.gc)
@@ -791,16 +791,16 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/traffic/exchange", s.getTrafficExchange)
 	mux.HandleFunc("GET /api/traffic/blob", s.getTrafficBlob)
 	mux.HandleFunc("GET /api/commands", s.pgListCommands)
-	mux.HandleFunc("GET /api/commands/stats", s.pgToolStats) // 按工具聚合调用次数
+	mux.HandleFunc("GET /api/commands/stats", s.pgToolStats) // ツールごとの呼び出し回数
 	mux.HandleFunc("GET /api/llm/records", s.pgListLLMRecords)
 	mux.HandleFunc("DELETE /api/llm/records", s.pgDeleteLLMRecords)
 	mux.HandleFunc("GET /api/llm/records/tasks", s.pgLLMTasks)
-	mux.HandleFunc("GET /api/llm/records/by-model", s.pgTokenByModel) // 按模型聚合本任务 token 用量
+	mux.HandleFunc("GET /api/llm/records/by-model", s.pgTokenByModel) // モデルごとの、このタスクの token 使用量
 	mux.HandleFunc("GET /api/llm/records/{id}", s.pgGetLLMRecord)
 	mux.HandleFunc("GET /api/settings", s.getSettings)
 	mux.HandleFunc("PUT /api/settings", s.putSettings)
-	// 漏洞 IM 推送。渠道是「多实例 + 各自过滤规则」的资源，因此独立成一组
-	// REST 接口，而不是塞进扁平的 /api/settings 键值里。
+	// 脆弱性の IM 通知。チャネルは「複数インスタンスと、それぞれのフィルタ規則」のリソースなので、独立した
+	// REST API にする。フラットな /api/settings のキー値には入れない。
 	mux.HandleFunc("GET /api/notify/meta", s.notifyMeta)
 	mux.HandleFunc("GET /api/notify/channels", s.notifyListChannels)
 	mux.HandleFunc("POST /api/notify/channels", s.notifyCreateChannel)
@@ -813,11 +813,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/report", s.getReport)
 	mux.HandleFunc("GET /api/chat/mentions", s.searchChatMentions)
 	mux.HandleFunc("POST /api/chat", s.chat)
-	mux.HandleFunc("POST /api/chat/upload", s.chatUpload) // 方式1 文件上传:落到会话/任务工作目录 uploads/
+	mux.HandleFunc("POST /api/chat/upload", s.chatUpload) // 方式 1 のファイルアップロード。会話またはタスクの作業ディレクトリ uploads/ に置く
 	mux.HandleFunc("GET /api/tasks/{id}/chat/status", s.taskChatStatus)
 	mux.HandleFunc("POST /api/tasks/{id}/chat/stop", s.stopChat)
 
-	// --- 管理后台 API (PostgreSQL 数据源; 新版数据库与管理后台方案) ---
+	// --- 管理画面 API (PostgreSQL のデータソース。新しいデータベースと管理画面の方式) ---
 	mux.HandleFunc("DELETE /api/tasks/{id}", s.pgDeleteTask)
 	// Agents
 	// conversations (chat page)
@@ -853,7 +853,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/agents/{key}/prompt/preview", s.pgPreviewPrompt)
 	mux.HandleFunc("GET /api/agents/{key}/visibility", s.pgGetAgentVisibility)
 	mux.HandleFunc("PUT /api/agents/{key}/visibility", s.pgSetAgentVisibility)
-	// 内置工具目录（描述/参数默认值可改、按 agent 绑定；key 与 handler 在代码层）
+	// 組み込みツール一覧（説明とパラメータのデフォルトは変更できる。agent ごとに関連付ける。key と handler はコード側）
 	mux.HandleFunc("GET /api/tools", s.pgListTools)
 	mux.HandleFunc("PUT /api/tools/{key}", s.pgUpdateTool)
 	mux.HandleFunc("POST /api/tools/custom", s.pgCreateCustomTool)
@@ -868,19 +868,19 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/mcp/{id}", s.pgDeleteMCP)
 	mux.HandleFunc("GET /api/mcp/{id}/tools", s.pgMCPTools)
 	mux.HandleFunc("POST /api/mcp/{id}/refresh", s.pgRefreshMCP)
-	// 资产同步 — ScopeSentry 数据源
+	// 資産同期。ScopeSentry のデータソース
 	mux.HandleFunc("GET /api/sync/scopesentry/status", s.syncSSStatus)
 	mux.HandleFunc("POST /api/sync/scopesentry/datasource", s.syncSSDatasource)
 	mux.HandleFunc("GET /api/sync/scopesentry/projects", s.syncSSProjects)
 	mux.HandleFunc("GET /api/sync/scopesentry/tasks", s.syncSSTasks)
 	mux.HandleFunc("POST /api/sync/scopesentry/sync", s.syncSSRun)
-	// Skill CRUD (文件系统)
+	// Skill CRUD (ファイルシステム)
 	mux.HandleFunc("GET /api/skills", s.fsListSkills)
 	mux.HandleFunc("POST /api/skills", s.fsCreateSkill)
 	mux.HandleFunc("POST /api/skills/upload", s.fsUploadSkill)
 	mux.HandleFunc("DELETE /api/skills/{name}", s.fsDeleteSkill)
-	mux.HandleFunc("GET /api/skills/missing", s.fsMissingSkills)   // 未命中(想调但不存在)的 skill 名
-	mux.HandleFunc("GET /api/skills/{name}/usage", s.fsSkillUsage) // 单个 skill 的最近调用
+	mux.HandleFunc("GET /api/skills/missing", s.fsMissingSkills)   // 未ヒット（呼びたいが存在しない）の skill 名
+	mux.HandleFunc("GET /api/skills/{name}/usage", s.fsSkillUsage) // 1 つの skill の最近の呼び出し
 	mux.HandleFunc("PUT /api/skills/{name}/meta", s.fsUpdateSkillMeta)
 	mux.HandleFunc("POST /api/skills/{name}/dirs", s.fsCreateDir)
 	mux.HandleFunc("GET /api/skills/{name}/files", s.fsListFiles)
@@ -888,13 +888,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/skills/{name}/files/{file...}", s.fsReadFile)
 	mux.HandleFunc("PUT /api/skills/{name}/files/{file...}", s.fsWriteFile)
 	mux.HandleFunc("DELETE /api/skills/{name}/files/{file...}", s.fsDeletePath)
-	// MCP 资源侧可见性（更具体的 skill 路由会优先匹配）
+	// MCP のリソース側の可視性（より具体的な skill のルートが先に一致する）
 	mux.HandleFunc("GET /api/visibility/{kind}/{id}", s.pgResourceVisibility)
 	mux.HandleFunc("POST /api/visibility/toggle", s.pgToggleVisibility)
-	// Skill 可见性（按名称，更具体，优先于上面的通配路由）
+	// Skill の可視性（名前ごと。より具体的なので、上のワイルドカードのルートより優先する）
 	mux.HandleFunc("GET /api/visibility/skill/{name}", s.pgSkillVisibility)
 	mux.HandleFunc("POST /api/visibility/skill/toggle", s.pgToggleSkillVisibility)
-	// LLM 多 profile
+	// LLM の複数 profile
 	mux.HandleFunc("GET /api/llm/profiles", s.pgListProfiles)
 	mux.HandleFunc("POST /api/llm/profiles", s.pgSaveProfile)
 	mux.HandleFunc("DELETE /api/llm/profiles/{id}", s.pgDeleteProfile)
@@ -905,14 +905,14 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/llm/pool/reset", s.pgLLMPoolReset)
 	mux.HandleFunc("POST /api/llm/models", s.pgListModels)
 
-	// 拦截规则管理
+	// インターセプト規則の管理
 	mux.HandleFunc("GET /api/intercept/rules", s.interceptListRules)
 	mux.HandleFunc("POST /api/intercept/rules", s.interceptCreateRule)
 	mux.HandleFunc("PUT /api/intercept/rules/{id}", s.interceptUpdateRule)
 	mux.HandleFunc("DELETE /api/intercept/rules/{id}", s.interceptDeleteRule)
 	mux.HandleFunc("POST /api/intercept/rules/{id}/toggle", s.interceptToggleRule)
 
-	// 资产拦截规则管理（全局黑名单：域名/IP/URL/CIDR）
+	// 資産インターセプト規則の管理（全体の拒否リスト。ドメイン、IP、URL、CIDR）
 	mux.HandleFunc("GET /api/asset-intercept/rules", s.assetInterceptListRules)
 	mux.HandleFunc("POST /api/asset-intercept/rules", s.assetInterceptCreateRule)
 	mux.HandleFunc("PUT /api/asset-intercept/rules/{id}", s.assetInterceptUpdateRule)
@@ -930,7 +930,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /api/intercept/tool-config", s.interceptSetToolConfig)
 	mux.HandleFunc("GET /api/intercept/judge", s.interceptGetJudgeConfig)
 	mux.HandleFunc("PUT /api/intercept/judge", s.interceptSetJudgeConfig)
-	mux.HandleFunc("GET /api/intercept/judge/usage", s.interceptJudgeUsage) // 兜底审批累计 token 用量
+	mux.HandleFunc("GET /api/intercept/judge/usage", s.interceptJudgeUsage) // 最終承認の累計 token 使用量
 
 	// /api/* goes through CORS + JWT; everything else is served by the embedded
 	// frontend (public — auth is enforced client-side and on the API). With the
@@ -1103,7 +1103,7 @@ func (s *Server) setActive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// resume the engine for the opened task (idempotent — no-op if already running).
-	// 排队中的任务:仅设为活跃可查看,不启动引擎(维持并发上限,由 reconcile 补位)。
+	// 待ちのタスク。アクティブにして見るだけにし、エンジンは起動しない（同時実行の上限は維持し、reconcile が空きを埋める）。
 	if t, ok := s.m.Task(req.ID); ok && !t.lifecycleSnapshot().Queued {
 		s.engine.Run(s.ctx, t)
 	}
@@ -1158,8 +1158,8 @@ func (s *Server) controlIntent(w http.ResponseWriter, r *http.Request) {
 	}
 	var req struct {
 		Action string `json:"action"`
-		Reason string `json:"reason"` // cancel(删除)时必填:删除原因
-		Mode   string `json:"mode"`   // cancel 专用:soft(默认,假删除)| hard(真删除,级联移除独占子孙)
+		Reason string `json:"reason"` // cancel（削除）のとき必須。削除理由
+		Mode   string `json:"mode"`   // cancel 専用。soft（デフォルト。論理削除）または hard（物理削除。専用の子孫を連鎖して外す）
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeErr(w, 400, "bad json: "+err.Error())
@@ -1178,9 +1178,9 @@ func (s *Server) controlIntent(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, result)
 }
 
-// rerunIntent 重跑一条没跑成功的意图(blocked/exhausted/stopped):把它置回 open,worker
-// 会重新认领、从头再跑(已写回图谱的 fact/finding/asset 保留);若任务已终态/暂停则顺带复活。
-// 用于「出错的 work 点击继续运行」——网络/LLM 抖动导致 blocked 后可一键重试。
+// rerunIntent は、成功しなかったインテント（blocked/exhausted/stopped）を 1 件再実行する。open に戻し、worker が
+// 取り直して最初から走る（グラフへ書き戻した fact/finding/asset は残る）。タスクが終態または一時停止なら、ついでに再開する。
+// 「エラーの work を押して続ける」用。ネットワークや LLM の揺れで blocked になったあと、ワンクリックで再試行できる。
 func restoreRerunIntent(t *Task, before *db.Node) error {
 	if t == nil || before == nil {
 		return fmt.Errorf("missing intent rollback snapshot")
@@ -1229,12 +1229,12 @@ func (s *Server) rerunIntent(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 500, err.Error())
 		return
 	}
-	log.Printf("[task] #%s 意图 #%d 已重开(重跑)", t.ID, iid)
+	log.Printf("[task] #%s インテント #%d を開き直しました（再実行）", t.ID, iid)
 	writeJSON(w, 200, map[string]any{"id": t.ID, "reopened": iid, "queued": queued})
 }
 
-// rerunBlocked 批量重跑本任务全部 blocked 意图(适合一次网络/LLM 断连导致多条 blocked 后
-// 一键全部重试),置回 open 并复活任务;返回重开的条数。
+// rerunBlocked は、このタスクの blocked インテントをまとめて再実行する（1 回のネットワークや LLM の切断で複数が blocked になったあと、
+// ワンクリックで全部再試行する）。open に戻してタスクを再開し、開き直した件数を返す。
 func (s *Server) rerunBlocked(w http.ResponseWriter, r *http.Request) {
 	t, ok := s.m.Task(r.PathValue("id"))
 	if !ok {
@@ -1279,7 +1279,7 @@ func (s *Server) rerunBlocked(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, 500, err.Error())
 			return
 		}
-		log.Printf("[task] #%s 批量重开 %d 条 blocked 意图", t.ID, n)
+		log.Printf("[task] #%s の blocked インテント %d 件をまとめて開き直しました", t.ID, n)
 	}
 	writeJSON(w, 200, map[string]any{"id": t.ID, "reopened": n, "queued": queued})
 }
@@ -1372,9 +1372,9 @@ func (s *Server) testLLM(w http.ResponseWriter, r *http.Request) {
 		APIKey           string `json:"api_key"`
 		ThinkingType     string `json:"thinking_type"`
 		ReasoningEffort  string `json:"reasoning_effort"`
-		ProfileID        *int64 `json:"profile_id"`         // 测已存 profile 时传入：api_key 为空则用它存的 key
-		Streaming        *bool  `json:"streaming"`          // 省略=流式，与保存 profile 时同一套默认
-		SessionHeaderKey string `json:"session_header_key"` // 非空=测试时也带该自定义会话头，值为一次性随机 session id
+		ProfileID        *int64 `json:"profile_id"`         // 保存済み profile を試すときに渡す。api_key が空なら、保存してある key を使う
+		Streaming        *bool  `json:"streaming"`          // 省略はストリーム。profile 保存時と同じデフォルト
+		SessionHeaderKey string `json:"session_header_key"` // 空でなければ、テスト時もこのカスタムセッションヘッダを付ける。値は 1 回限りのランダムな session id
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeErr(w, 400, err.Error())
@@ -1385,18 +1385,18 @@ func (s *Server) testLLM(w http.ResponseWriter, r *http.Request) {
 	// reasoning_effort/thinking field fails the test too (no false "test ok, run 400").
 	cfg.ThinkingType = req.ThinkingType
 	cfg.ReasoningEffort = req.ReasoningEffort
-	// 同理，收发模式也照该 profile 的选择来：只支持其中一种通道的端点必须在这里就
-	// 暴露，而不是等会话里才发现"测试通过的配置根本跑不动"。
+	// 同様に、送受信モードもその profile の選択に従う。どちらか一方の経路しか対応しないエンドポイントは、ここで
+	// 出しておく。セッションの中で「テストを通った設定がまったく動かない」と分かってからでは遅い。
 	if req.Streaming != nil {
 		cfg.Stream = *req.Streaming
 	}
-	// 自定义会话头名照该配置来：非空则测试请求也发这个头(值为一次性随机 session id，
-	// 见 TestConnection)。opencode zen 等强制要求 x-opencode-session 的端点，缺了它
-	// 直接 400，必须在测试路径上也带上，否则"对话通、测试 400"。
+	// カスタムセッションヘッダ名もその設定に従う。空でなければテストリクエストにもこのヘッダを付ける（値は 1 回限りのランダムな session id。
+	// TestConnection を参照）。opencode zen のように x-opencode-session を必須にするエンドポイントは、これがないと
+	// そのまま 400 になる。テスト経路にも付ける。そうしないと「会話は通るがテストは 400」になる。
 	cfg.SessionHeaderKey = req.SessionHeaderKey
-	// API Key 解析优先级：表单输入 > 指定 profile 存的 key > 全局配置的 key。
-	// 已存 profile 的 key 不回传浏览器，所以测试已存配置时表单为空，需从 DB 取。
-	// 会话头名同理：表单未带时用已存 profile 的值兜底。
+	// API Key の優先順。フォームの入力、指定 profile に保存した key、全体設定の key。
+	// 保存済み profile の key はブラウザへ返さない。保存済み設定のテストではフォームが空なので、DB から取る。
+	// セッションヘッダ名も同様。フォームになければ、保存済み profile の値で補う。
 	if req.ProfileID != nil && (cfg.APIKey == "" || cfg.SessionHeaderKey == "") {
 		if p, err := s.m.pg.ProfileByID(*req.ProfileID); err == nil && p != nil {
 			if cfg.APIKey == "" {
@@ -1416,15 +1416,15 @@ func (s *Server) testLLM(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]any{"ok": false, "error": "API Key が指定されていません"})
 		return
 	}
-	// 重试参数【不】带进连接测试:测试有 30s 硬超时,把配置的重试次数/长间隔叠上去
-	// 只会让一个本来能用的端点测成"超时失败"。测试看的是"这个端点通不通",重试节奏
-	// 是跑起来之后的事。
+	// 再試行パラメータは接続テストに入れない。テストには 30s の硬いタイムアウトがあり、設定の再試行回数と長い間隔を重ねると
+	// 本来使えるエンドポイントが「タイムアウトで失敗」になる。テストが見るのは「このエンドポイントが通るか」で、再試行の間隔は
+	// 動き始めてからの話である。
 	lat, reply, err := agent.TestConnection(r.Context(), cfg)
 	if err != nil {
 		writeJSON(w, 200, map[string]any{"ok": false, "error": err.Error()})
 		return
 	}
-	// 回传模型实际回复，让"测试通过"有据可查：看得见它确实说了话，而不只是 HTTP 200。
+	// モデルの実際の返答を返す。「テスト通過」の根拠になる。HTTP 200 だけではなく、実際に話したことが見える。
 	writeJSON(w, 200, map[string]any{
 		"ok": true, "latency_ms": lat.Milliseconds(), "model": cfg.Model, "reply": truncateReply(reply),
 	})
@@ -1443,19 +1443,19 @@ func truncateReply(s string) string {
 }
 
 type createTaskReq struct {
-	Name                 string   `json:"name,omitempty"` // 可选任务名称;省略/空=未命名
+	Name                 string   `json:"name,omitempty"` // 任意のタスク名。省略または空は名称未設定
 	CategoryID           *int64   `json:"category_id,omitempty"`
 	Description          string   `json:"description"`
 	Goal                 string   `json:"goal"`
-	LLMProfileID         *int64   `json:"llm_profile_id,omitempty"`    // 指定运行本任务的 LLM 配置;省略/null=用激活配置
-	LLMProfileIDs        []int64  `json:"llm_profile_ids,omitempty"`   // 有序任务级配置链;第一项初始生效
-	SourceTaskIDs        []string `json:"source_task_ids,omitempty"`   // 仅直接、只读继承的来源任务
-	CompanyIDs           []int64  `json:"company_ids,omitempty"`       // 关联企业范围并快照关联当前企业资产;不复制资产或强制生成意图
-	TimeoutSeconds       int      `json:"timeout_seconds"`             // 任务级超时(秒);0/省略=不限时
-	PlanHeartbeatSeconds int      `json:"plan_heartbeat_seconds"`      // planner 心跳触发间隔(秒);0/省略=默认600(10min);下限=默认=600,低于自动抬到600
-	SeedFirstIntent      *bool    `json:"seed_first_intent,omitempty"` // 创建时直接下发一条种子意图(内容=描述+目标),让 worker 免等首轮 planner 直接开跑;省略/null=默认关闭,走标准先规划再执行。显式传 true 才开(CTF 常一 work 解决时可省掉开跑前的 planner 轮)。
-	CoverageEnabled      *bool    `json:"coverage_enabled,omitempty"`  // 资产覆盖度功能;省略/null=默认开(true)。false=关闭覆盖度计算/展示/自动累积范围+隐藏 add_task_scope/list_untested_assets。company 关联不受影响。
-	// InterceptRules 任务级资产拦截/允许规则(创建时录入,存 task_intercept_rules,不进全局表)。
+	LLMProfileID         *int64   `json:"llm_profile_id,omitempty"`    // このタスクを動かす LLM 設定。省略または null は有効な設定
+	LLMProfileIDs        []int64  `json:"llm_profile_ids,omitempty"`   // 順序のあるタスク単位の設定チェーン。先頭が最初に有効
+	SourceTaskIDs        []string `json:"source_task_ids,omitempty"`   // 直接かつ読み取り専用で継承する元タスクだけ
+	CompanyIDs           []int64  `json:"company_ids,omitempty"`       // 企業範囲を関連付け、現在の企業資産のスナップショットも関連付ける。資産はコピーせず、インテントも強制生成しない
+	TimeoutSeconds       int      `json:"timeout_seconds"`             // タスク単位のタイムアウト（秒）。0 または省略は無制限
+	PlanHeartbeatSeconds int      `json:"plan_heartbeat_seconds"`      // planner のハートビート間隔（秒）。0 または省略はデフォルトの 600（10min）。下限もデフォルトの 600 で、下回ると 600 に上げる
+	SeedFirstIntent      *bool    `json:"seed_first_intent,omitempty"` // 作成時に種インテントを 1 件直接出す（内容は説明と目標）。worker は最初の planner を待たずに走り出す。省略または null はデフォルトのオフで、標準の先に計画してから実行。明示的に true のときだけオン（CTF で 1 work で解けるときは、走り出す前の planner ラウンドを省ける）。
+	CoverageEnabled      *bool    `json:"coverage_enabled,omitempty"`  // 資産カバー率の機能。省略または null はデフォルトのオン（true）。false はカバー率の計算、表示、範囲の自動蓄積を止め、add_task_scope/list_untested_assets を隠す。company の関連付けには影響しない。
+	// InterceptRules はタスク単位の資産インターセプトと許可のルール（作成時に入れる。task_intercept_rules に保存し、全体のテーブルには入れない）。
 	InterceptRules []taskInterceptRuleReq `json:"intercept_rules,omitempty"`
 }
 
@@ -1466,7 +1466,7 @@ func (s *Server) createTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if strings.TrimSpace(req.Description) == "" {
-		req.Description = "未命名任务"
+		req.Description = "名称未設定のタスク"
 	}
 	if len(req.LLMProfileIDs) == 0 && req.LLMProfileID != nil {
 		req.LLMProfileIDs = []int64{*req.LLMProfileID}
@@ -1527,9 +1527,9 @@ func (s *Server) createTask(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 500, err.Error())
 		return
 	}
-	log.Printf("[task] 新建任务 #%s «%s» 目标: %s", t.ID, req.Description, req.Goal)
-	// 共享的建后流程(seed + 种子意图 + 后台目标分解 + engine.Run),与 spawn_task 复用同一段。
-	// launchTask 内部异步,不阻塞 UI —— 目标分解在后台可见地进行。
+	log.Printf("[task] タスクを作成しました #%s «%s» 目標: %s", t.ID, req.Description, req.Goal)
+	// 作成後の共通処理（seed、種インテント、バックグラウンドの目標分解、engine.Run）。spawn_task と同じ処理を使う。
+	// launchTask は内部で非同期であり、UI をブロックしない。目標分解はバックグラウンドで見える形で進む。
 	s.launchTask(t, req.Description+" "+req.Goal, req.SeedFirstIntent != nil && *req.SeedFirstIntent)
 	writeJSON(w, 201, taskDTO(t, s.resolvedTaskStatus(t)))
 }
@@ -1554,8 +1554,8 @@ func (s *Server) updateTaskLLMProfiles(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 404, "task not found")
 		return
 	}
-	// 任何生命周期状态(含终态)都可以改链:任务结束后主 Agent 对话仍走这条链,
-	// 模型不可用时不换链就等于把已完成任务的交互一起锁死。
+	// どのライフサイクル状態（終態を含む）でもチェーンは変えられる。タスクが終わったあともメイン Agent の会話はこのチェーンを使い、
+	// モデルが使えないときにチェーンを変えないと、完了したタスクの対話まで一緒にロックされる。
 	before := t.llmStateSnapshot()
 	var req struct {
 		LLMProfileIDs      []int64 `json:"llm_profile_ids"`
@@ -1667,12 +1667,12 @@ func (s *Server) llmHost() string {
 func (s *Server) seed(t *Task, text string) {
 	scheme, host, port, ok := parseTarget(text)
 	if !ok {
-		log.Printf("[seed] task %s: 未能从 %q 解析出目标 host/IP，不创建站点（请手动配置 scope）", t.ID, text)
+		log.Printf("[seed] task %s: %q から目標の host/IP を解釈できなかったため、サイトは作りません（scope を手動で設定してください）", t.ID, text)
 		return
 	}
 	// P0-1 guard: never treat the configured LLM gateway as a target.
 	if gw := s.llmHost(); gw != "" && host == gw {
-		log.Printf("[seed] task %s: 目标 %q 是 LLM 网关，拒绝作为渗透目标", t.ID, host)
+		log.Printf("[seed] task %s: 目標 %q は LLM ゲートウェイのため、ペンテスト対象にしません", t.ID, host)
 		return
 	}
 
@@ -1691,7 +1691,7 @@ func (s *Server) seed(t *Task, text string) {
 			rootID, _ = as.UpsertRootDomain(db.UpsertRootDomainReq{Domain: host, TaskID: taskID})
 		}
 		if rootID > 0 {
-			_ = as.SetTaskAssetSource(taskID, rootID, "task", "由任务描述或目标初始化", nil)
+			_ = as.SetTaskAssetSource(taskID, rootID, "task", "タスクの説明または目標から初期化", nil)
 		}
 	}
 	// anchor the seeded assets to this task's begin root as lineage/provenance
@@ -1701,28 +1701,28 @@ func (s *Server) seed(t *Task, text string) {
 			_ = t.Store.Anchor(begin, rootID)
 		}
 	}
-	log.Printf("[seed] task %s: 目标站点 %s", t.ID, u)
-	// 不在这里 Notify:首轮是否触发统一由 engine.Run 的 HasActiveIntent 决定(种子意图任务
-	// 跳过首轮)。seed 早于 Run 执行,若在此 Notify 会 buffered 到通道、被 plannerLoop 启动时
-	// 消费掉而绕过 Run 的门控 → 种子任务仍误触发首轮。
+	log.Printf("[seed] task %s: 目標サイト %s", t.ID, u)
+	// ここでは Notify しない。最初のラウンドを起こすかは、engine.Run の HasActiveIntent がまとめて決める（種インテントのあるタスクは
+	// 最初を飛ばす）。seed は Run より先に走る。ここで Notify するとチャネルにバッファされ、plannerLoop の起動時に
+	// 消費されて Run の門を迂回する。種タスクが最初のラウンドを誤って起こす。
 }
 
-// seedFirstIntent writes ONE open intent (summary = 描述+目标) into the task's
+// seedFirstIntent writes ONE open intent (summary = 説明と目標) into the task's
 // frontier at creation, so a worker can claim and run it immediately without first
 // waiting a planner round. Mirrors a planner top-level intent: it links from the
 // origin fact (RelDerivedFrom) so it still traces back to a fact node. Best-effort —
 // a failure just falls back to the normal planner-driven flow.
 func (s *Server) seedFirstIntent(t *Task) {
-	summary := fmt.Sprintf("完成任务目标：%s（任务：%s）", t.Goal, t.Description)
+	summary := fmt.Sprintf("タスクの目標を達成する：%s（タスク：%s）", t.Goal, t.Description)
 	id, err := t.Store.AddIntent(map[string]any{"summary": summary}, 8, nil, "seed")
 	if err != nil {
-		log.Printf("[seed] task %s: 下发种子意图失败: %v", t.ID, err)
+		log.Printf("[seed] task %s: 最初のインテントの発行に失敗しました: %v", t.ID, err)
 		return
 	}
 	if origin, _ := t.Store.OriginFactID(); origin > 0 {
 		_ = t.Store.Link(origin, db.RelDerivedFrom, id)
 	}
-	log.Printf("[seed] task %s: 已下发种子意图 #%d", t.ID, id)
+	log.Printf("[seed] task %s: 最初のインテント #%d を発行しました", t.ID, id)
 }
 
 func (s *Server) getTask(w http.ResponseWriter, r *http.Request) {
@@ -1749,7 +1749,7 @@ func (s *Server) taskCoverage(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 503, "asset store が有効になっていません")
 		return
 	}
-	// 资产覆盖度功能关闭 → 短路返回 {enabled:false}，前端据此隐藏覆盖度卡片/进度。
+	// 資産カバー率の機能がオフ → {enabled:false} をすぐ返す。フロントはこれでカバー率のカードと進捗を隠す。
 	if !t.CoverageEnabled {
 		writeJSON(w, 200, &db.Coverage{Enabled: false, ByType: []db.CoverageByType{}})
 		return
@@ -1765,7 +1765,7 @@ func (s *Server) taskCoverage(w http.ResponseWriter, r *http.Request) {
 }
 
 // taskCoverageGraph returns the force-directed asset coverage graph for a task:
-// all in-scope assets (每种类型) + 连接用的根域名/公司节点, each carrying tested/in_scope.
+// all in-scope assets (種類ごと) + 接続用のルートドメインと企業ノード, each carrying tested/in_scope.
 func (s *Server) taskCoverageGraph(w http.ResponseWriter, r *http.Request) {
 	t, ok := s.m.Task(r.PathValue("id"))
 	if !ok {
@@ -1787,7 +1787,7 @@ func (s *Server) taskCoverageGraph(w http.ResponseWriter, r *http.Request) {
 }
 
 // taskAssetRefs returns the intents / facts / findings in this task anchored to a
-// given asset id — powers the coverage-graph node drawer's「关联意图 / 关联事实」。
+// given asset id — powers the coverage-graph node drawer's「関連インテント / 関連事実」。
 func (s *Server) taskAssetRefs(w http.ResponseWriter, r *http.Request) {
 	t, ok := s.m.Task(r.PathValue("id"))
 	if !ok {
@@ -1911,13 +1911,13 @@ func (s *Server) frontier(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) findings(w http.ResponseWriter, r *http.Request) {
-	// 无 task 参数 → 全局「发现」页：从独立 findings 表读取（任务删除后 finding 依然保留）。
-	// 带 task 参数 → 仅该任务（任务概览/发现 Tab 用），从 exploration_nodes 读（任务在则节点在）。
+	// task パラメータがない → 全体の「検出事項」ページ。独立した findings テーブルから読む（タスク削除後も finding は残る）。
+	// task パラメータがある → そのタスクだけ（タスク概要と検出事項タブ）。exploration_nodes から読む（タスクがあればノードもある）。
 	q := r.URL.Query()
 	taskParam := q.Get("task")
 	if taskParam == "" {
-		// 带 page/limit → 服务端分页 {items,total,...}；不带 → 裸数组（dashboard 汇总用，
-		// 与 intents 端点的兼容策略一致）。筛选/排序统一下推到 SQL。
+		// page/limit がある → サーバー側ページング {items,total,...}。ない → 生の配列（ダッシュボードの集計用。
+		// intents エンドポイントの互換方針と同じ）。絞り込みと並びは SQL へ下ろす。
 		if q.Get("page") == "" && q.Get("limit") == "" {
 			fs, _ := s.m.pg.ListFindings(500)
 			assets := s.resolveFindingAssets(fs)
@@ -2045,7 +2045,7 @@ func (s *Server) resolveAssetIDs(ids []int64) map[int64]*db.Asset {
 }
 
 // findingStats serves the whole-table aggregates (stat cards + vuln-class filter)
-// for the paginated 发现 page.
+// for the paginated 検出事項 page.
 func (s *Server) findingStats(w http.ResponseWriter, r *http.Request) {
 	st, err := s.m.pg.FindingStats()
 	if err != nil {
@@ -2091,13 +2091,13 @@ func (s *Server) getFinding(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, dto)
 }
 
-// findingsExport 导出发现页的漏洞。
+// findingsExport は検出事項ページの脆弱性を書き出す。
 //
-//	scope   = filtered（沿用页面筛选）| all（全部）| selected（勾选的 ids）
-//	format  = md-single（整合一份 .md）| md-zip（一漏洞一 .md,打包 zip）
+//	scope   = filtered（画面の絞り込みを使う）| all（全部）| selected（選んだ ids）
+//	format  = md-single（1 つの .md にまとめる）| md-zip（脆弱性 1 件につき 1 つの .md を zip にまとめる）
 //	          | csv | json
-//	ids     = 逗号分隔的 finding id（scope=selected 时必填）
-//	筛选参数 severity/status/vulnclass/task_id/q/sort 与列表接口一致（scope=filtered 用）。
+//	ids     = カンマ区切りの finding id（scope=selected のとき必須）
+//	絞り込みパラメータ severity/status/vulnclass/task_id/q/sort は一覧 API と同じ（scope=filtered で使う）。
 func (s *Server) findingsExport(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	scope := q.Get("scope")
@@ -2124,7 +2124,7 @@ func (s *Server) findingsExport(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	case "all":
-		// 空 filter = 不加任何条件。
+		// 空の filter は条件を付けない。
 	case "filtered", "":
 		filter = findingFilterFromQuery(q)
 	default:
@@ -2280,9 +2280,9 @@ func (s *Server) patchFinding(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, 400, "bad status: "+*body.Status)
 			return
 		}
-		// 走带通知的版本：状态更新与「状态变更推送事件」在同一事务里落库，
-		// 避免出现状态已改而推送事件丢失的窗口。事件登记失败不影响状态更新，
-		// 所以只记日志、不向调用方报错。
+		// 通知付きの版を通す。状態の更新と「状態変更の通知イベント」を同じトランザクションで DB に書く。
+		// 状態は変わったのに通知イベントが失われる窓を避ける。イベントの登録失敗は状態の更新に影響しない。
+		// ログを残すだけで、呼び出し側にはエラーを返さない。
 		from, found, notified, err := s.m.pg.SetFindingStatusWithNotify(r.Context(), id, *body.Status)
 		if err != nil {
 			writeErr(w, 500, err.Error())
@@ -2293,7 +2293,7 @@ func (s *Server) patchFinding(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if !notified && from != *body.Status {
-			log.Printf("[notify] 状态变更事件未登记 finding=%d %s→%s（状态已更新）", id, from, *body.Status)
+			log.Printf("[notify] 状態変更イベントを登録できませんでした finding=%d %s→%s（状態は更新済み）", id, from, *body.Status)
 		}
 	}
 	if body.Severity != nil {
@@ -2529,7 +2529,7 @@ func (s *Server) explorationGraph(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"nodes": taskNodeDTOs(nodes), "edges": edgeDTOs(edges)})
 }
 
-// explorationNodes serves the 播报板: this task's own exploration nodes as a
+// explorationNodes serves the 速報ボード: this task's own exploration nodes as a
 // paged time series (newest first unless ?order=asc), filterable by kind/state
 // and a payload substring. Inherited nodes are deliberately out of scope — the
 // board reports what this task is doing right now, and paging across the source
@@ -2605,7 +2605,7 @@ func (s *Server) explorationNodes(w http.ResponseWriter, r *http.Request) {
 
 // nodeAnchoredAssets resolves the exploration_anchors of the given nodes into
 // display-ready asset labels, keyed by node id. Anchors are provenance decoration
-// for the 播报板 — a failure here must not cost the caller its page, so errors are
+// for the 速報ボード — a failure here must not cost the caller its page, so errors are
 // logged and degrade to "no assets".
 func (s *Server) nodeAnchoredAssets(t *Task, nodeIDs []int64) map[string][]FindingAssetDTO {
 	out := map[string][]FindingAssetDTO{}
@@ -3271,7 +3271,7 @@ func (s *Server) getTrafficBlob(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Length", strconv.FormatInt(size, 10))
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", hash+".bin"))
 	if _, err := io.Copy(w, f); err != nil {
-		log.Printf("[traffic] 下载 blob %s 中断：%v", hash, err)
+		log.Printf("[traffic] blob %s のダウンロードが中断しました：%v", hash, err)
 	}
 }
 
@@ -3287,7 +3287,7 @@ func (s *Server) settingsPayload() map[string]any {
 	pyStored, _, _ := s.m.pg.GetSetting(settingPythonInterp)
 	concOn, concLimit := s.m.ConcurrencyLimit()
 	if concLimit == 0 {
-		concLimit = defaultConcurrencyLimit // 关闭时也回显一个合理默认值给 UI
+		concLimit = defaultConcurrencyLimit // オフのときも、UI へ返す妥当なデフォルトを 1 つ出す
 	}
 	return map[string]any{
 		"traffic_capture":          s.m.TrafficEnabled(),
@@ -3297,38 +3297,38 @@ func (s *Server) settingsPayload() map[string]any {
 		"web_search_backend":       backend,
 		"brave_key_set":            strings.TrimSpace(braveKey) != "",
 		"tavily_key_set":           strings.TrimSpace(tavilyKey) != "",
-		"web_search_proxy":         proxy,                       // 独立出口代理(http/https/socks5)，空=直连
-		"global_proxy":             s.m.GlobalProxy(),           // 全局出口代理(http/https/socks5)，所有目标流量走它，空=直连
-		"python_interpreter":       strings.TrimSpace(pyStored), // 用户/自动设的值(空=用运行时检测)
-		"workers":                  s.m.Workers(),               // 并发工作 agent 数(默认3)；对之后启动的任务生效
-		"task_concurrency_enabled": concOn,                      // 任务并发上限开关(默认关)
-		"task_concurrency_limit":   concLimit,                   // 同时运行任务上限(开启后默认5)
-		// LLM 轮询(故障转移)。默认关；开启后走全局激活配置的 agent 在当前配置不可用时
-		// 自动切到下一个配置。bind_fallback 仅在轮询开启时有意义(默认关)。
+		"web_search_proxy":         proxy,                       // 独立した出口プロキシ（http/https/socks5）。空は直接接続
+		"global_proxy":             s.m.GlobalProxy(),           // 全体の出口プロキシ（http/https/socks5）。目標のトラフィックはすべてここを通る。空は直接接続
+		"python_interpreter":       strings.TrimSpace(pyStored), // ユーザーまたは自動で設定した値（空は実行時の検出を使う）
+		"workers":                  s.m.Workers(),               // 同時に動く作業 agent の数（デフォルト 3）。このあと起動するタスクに効く
+		"task_concurrency_enabled": concOn,                      // タスク同時実行の上限スイッチ（デフォルトはオフ）
+		"task_concurrency_limit":   concLimit,                   // 同時に動くタスクの上限（オンにしたあとのデフォルトは 5）
+		// LLM のフェイルオーバー。デフォルトはオフ。オンにすると、全体で有効な設定を使う agent は、現在の設定が使えないとき
+		// 次の設定へ自動で切り替わる。bind_fallback が意味を持つのはフェイルオーバーがオンのときだけである（デフォルトはオフ）。
 		"llm_pool_enabled":       s.m.LLMPoolEnabled(),
 		"llm_pool_bind_fallback": s.m.LLMPoolBindFallback(),
-		// 操作约束注入范围(默认都开):把本任务的 allow/deny 约束拼进对应 agent 的系统提示。
+		// 操作制約の注入範囲（デフォルトはどちらもオン）。このタスクの allow/deny 制約を、対応する agent のシステムプロンプトへ足す。
 		"constraints_inject_planner": s.constraintInjectPlanner(),
 		"constraints_inject_worker":  s.constraintInjectWorker(),
-		// 实验功能:noa 模型驱动上下文压缩(默认关)。开启后平台接入的四类 agent 由 noa
-		// 接管上下文压缩,取代内置 compaction;每 run 读一次,对之后启动的 run 生效。
+		// 実験機能。noa モデルによるコンテキスト圧縮（デフォルトはオフ）。オンにすると、プラットフォームに入る 4 種の agent の
+		// コンテキスト圧縮を noa が引き受け、組み込みの compaction に代わる。run ごとに 1 回読み、その後に起動する run に効く。
 		"noa_compaction": s.m.NoaCompactionEnabled(),
-		// 漏洞 IM 推送的全局项。渠道本身是独立资源，走 /api/notify/* 管理；
-		// 这里只放「作用于全部渠道」的三项。
+		// 脆弱性の IM 通知の全体項目。チャネル自体は独立したリソースで、/api/notify/* で管理する。
+		// ここには「すべてのチャネルに効く」3 項目だけを置く。
 		"notify_enabled":             s.m.pg.GetBool(settingNotifyEnabled, true),
 		"notify_public_base_url":     notifyPublicBaseURL(s.m.pg),
 		"notify_digest_interval_min": notifyDigestIntervalMin(s.m.pg),
 	}
 }
 
-// notifyPublicBaseURL 读推送回链用的外部地址。
+// notifyPublicBaseURL は、通知の戻りリンクに使う外部アドレスを読む。
 func notifyPublicBaseURL(pg *db.DB) string {
 	v, _, _ := pg.GetSetting(settingNotifyPublicBaseURL)
 	return v
 }
 
-// notifyDigestIntervalMin 读汇总周期（分钟），非法或未配置时回落到默认值。
-// 回显默认值而不是空串，UI 才能把当前生效值填进输入框。
+// notifyDigestIntervalMin はまとめ周期（分）を読む。不正または未設定のときはデフォルトに戻る。
+// 空文字ではなくデフォルトを返す。UI が、今効いている値を入力欄へ入れられる。
 func notifyDigestIntervalMin(pg *db.DB) int {
 	v, ok, _ := pg.GetSetting(settingNotifyDigestMinutes)
 	if !ok {
@@ -3362,31 +3362,31 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		TrafficCapture      *bool `json:"traffic_capture"`
 		AgentTrafficBinding *bool `json:"agent_traffic_binding"`
-		LLMRecord           *bool `json:"llm_record"` // LLM 录制开关（默认关）；即时生效，无需重建 agent
+		LLMRecord           *bool `json:"llm_record"` // LLM 記録スイッチ（デフォルトはオフ）。すぐ効く。agent の再構築は不要
 		// Web search. WebSearchEnabled/Backend toggle the tool + backend; BraveKey/TavilyKey
 		// are optional — omit (null) to leave a stored key untouched, send "" to clear.
 		WebSearchEnabled *bool   `json:"web_search_enabled"`
 		WebSearchBackend *string `json:"web_search_backend"`
 		BraveKey         *string `json:"brave_search_api_key"`
 		TavilyKey        *string `json:"tavily_search_api_key"`
-		WebSearchProxy   *string `json:"web_search_proxy"`   // 独立出口代理(http/https/socks5)；null=不改，""=清空
-		GlobalProxy      *string `json:"global_proxy"`       // 全局出口代理(http/https/socks5)；null=不改，""=清空(直连)
-		PythonInterp     *string `json:"python_interpreter"` // 自定义脚本工具的 python 解释器路径
-		Workers          *int    `json:"workers"`            // 并发工作 agent 数(>0)；对之后启动的任务生效
-		// 任务并发上限:同时「运行中」的任务数上限。关闭=不限;开启后新建任务超限则排队,有空位自动启动。
+		WebSearchProxy   *string `json:"web_search_proxy"`   // 独立した出口プロキシ（http/https/socks5）。null は変更しない。"" は空にする
+		GlobalProxy      *string `json:"global_proxy"`       // 全体の出口プロキシ（http/https/socks5）。null は変更しない。"" は空にする（直接接続）
+		PythonInterp     *string `json:"python_interpreter"` // カスタムスクリプトツールの python インタプリタのパス
+		Workers          *int    `json:"workers"`            // 同時に動く作業 agent の数（>0）。このあと起動するタスクに効く
+		// タスク同時実行の上限。同時に「実行中」になれるタスク数。オフは無制限。オンのあと、新規タスクが上限を超えると待ち、空きが出たら自動で起動する。
 		ConcurrencyEnabled *bool `json:"task_concurrency_enabled"`
 		ConcurrencyLimit   *int  `json:"task_concurrency_limit"`
-		// LLM 轮询(故障转移)开关 + 「绑定配置失败也兜底回轮询链」开关。两者都需要
-		// 重建 provider 链才生效，走下面的 changed → applyLLM 路径。
+		// LLM のフェイルオーバーのスイッチと、「関連付けた設定が失敗してもフェイルオーバーのチェーンへ戻る」スイッチ。どちらも
+		// provider チェーンを作り直してから効く。下の changed → applyLLM の経路を通る。
 		LLMPoolEnabled      *bool `json:"llm_pool_enabled"`
 		LLMPoolBindFallback *bool `json:"llm_pool_bind_fallback"`
-		// 操作约束注入范围开关(默认都开);即时生效(planner/worker 每轮读),无需重建 agent。
+		// 操作制約の注入範囲のスイッチ（デフォルトはどちらもオン）。すぐ効く（planner/worker がラウンドごとに読む）。agent の再構築は不要。
 		ConstraintsInjectPlanner *bool `json:"constraints_inject_planner"`
 		ConstraintsInjectWorker  *bool `json:"constraints_inject_worker"`
-		// 实验功能:noa 上下文压缩开关(默认关);每 run 读,对之后启动的 run 生效,无需重建 agent。
+		// 実験機能。noa のコンテキスト圧縮のスイッチ（デフォルトはオフ）。run ごとに読む。その後に起動する run に効き、agent の再構築は不要。
 		NoaCompaction *bool `json:"noa_compaction"`
-		// 漏洞 IM 推送的全局项。三者都由投递引擎每轮读一次，改完即时生效，
-		// 不需要重建 agent 或重启。
+		// 脆弱性の IM 通知の全体項目。3 つとも配信エンジンがラウンドごとに 1 回読む。変更はすぐ効き、
+		// agent の再構築も再起動も不要。
 		NotifyEnabled    *bool   `json:"notify_enabled"`
 		NotifyBaseURL    *string `json:"notify_public_base_url"`
 		NotifyDigestMins *int    `json:"notify_digest_interval_min"`
@@ -3408,13 +3408,13 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if req.NoaCompaction != nil {
-		// 每 run 读的解析器,切换即时对之后启动的 run 生效,无需 applyLLM 重建。
+		// run ごとに読む解釈関数。切り替えは、その後に起動する run にすぐ効く。applyLLM での再構築は不要。
 		if err := s.m.SetNoaCompaction(*req.NoaCompaction); err != nil {
 			writeErr(w, 500, err.Error())
 			return
 		}
 	}
-	// 推送全局项:投递引擎每轮重新读取,所以即时生效、无需重启。
+	// 通知の全体項目。配信エンジンがラウンドごとに読み直すので、すぐ効き、再起動は不要。
 	if req.NotifyEnabled != nil {
 		if err := s.m.pg.SetBool(settingNotifyEnabled, *req.NotifyEnabled); err != nil {
 			writeErr(w, 500, err.Error())
@@ -3422,8 +3422,8 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if req.NotifyBaseURL != nil {
-		// 统一裁掉尾部斜杠:回链拼接用的是 fmt.Sprintf("%s/function/..."),
-		// 留着尾部斜杠会产出 "//function/..." 这种双斜杠路径。
+		// 末尾のスラッシュは一律で除く。戻りリンクは fmt.Sprintf("%s/function/...") でつなぐ。
+		// 末尾のスラッシュを残すと "//function/..." という二重スラッシュのパスになる。
 		base := trimTrailingSlash(strings.TrimSpace(*req.NotifyBaseURL))
 		if base != "" && !strings.HasPrefix(base, "http://") && !strings.HasPrefix(base, "https://") {
 			writeErr(w, 400, "リンク先アドレスは http:// または https:// で始めてください")
@@ -3435,7 +3435,7 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if req.NotifyDigestMins != nil {
-		// 下限 1 分钟:更短的周期等于实时推送,那样应该直接把渠道改成 realtime 模式。
+		// 下限は 1 分。それより短い周期は即時通知と同じなので、チャネルを realtime モードに変える。
 		if *req.NotifyDigestMins < 1 || *req.NotifyDigestMins > 24*60 {
 			writeErr(w, 400, "ダイジェストの周期は 1〜1440 分の範囲にしてください")
 			return
@@ -3452,7 +3452,7 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if req.ConcurrencyEnabled != nil || req.ConcurrencyLimit != nil {
-		// 部分 PUT:未给的字段用当前值兜底,避免只改一个把另一个重置。
+		// 部分 PUT。渡されていないフィールドは現在の値で補う。1 つだけ変えてもう一方がリセットされるのを避ける。
 		curOn, curLimit := s.m.ConcurrencyLimit()
 		if curLimit == 0 {
 			curLimit = defaultConcurrencyLimit
@@ -3468,7 +3468,7 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, 400, err.Error())
 			return
 		}
-		// 立即协调一次:关闭时放行全部排队,调高上限时补位启动,不必等下一个 tick。
+		// すぐ 1 回調整する。オフにしたときは待ちを全部通し、上限を上げたときは空きを埋めて起動する。次の tick を待たない。
 		go s.reconcileConcurrency()
 	}
 	if req.PythonInterp != nil {
@@ -3478,7 +3478,7 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if req.LLMRecord != nil {
-		// 录制器每次调用读取该标志，切换即时生效，无需 applyLLM 重建。
+		// レコーダーは呼び出しのたびにこのフラグを読む。切り替えはすぐ効く。applyLLM での再構築は不要。
 		if err := s.m.SetLLMRecordEnabled(*req.LLMRecord); err != nil {
 			writeErr(w, 500, err.Error())
 			return
@@ -3591,14 +3591,14 @@ func (s *Server) testWebSearch(w http.ResponseWriter, r *http.Request) {
 	cfg := actool.WebSearchConfig{Backend: backend, BraveAPIKey: braveKey, TavilyAPIKey: tavilyKey, Proxy: proxy}
 	// Hard cap so a slow/blocked proxy can't hang the request.
 	wall := 30 * time.Second
-	// deepseek 的凭据不在表单里，来自当前激活的 LLM 配置；同时它每次搜索都跑一次
-	// 模型推理，30s 的通用上限偏紧，单独放宽。这里不预判配置能不能用——测这一下
-	// 本来就是给用户自己确认的手段，真跑不通时下面的报错比预判更有信息量。
+	// deepseek の認証情報はフォームにない。現在有効な LLM 設定から来る。検索のたびにモデル推論が 1 回走り、
+	// 30s の共通上限ではきついので、ここだけ緩める。設定が使えるかはここでは先に判定しない。この 1 回のテストは
+	// ユーザー自身が確認する手段である。本当に通らないときの下のエラーの方が、先の判定より情報がある。
 	probeQuery := "test"
 	if strings.TrimSpace(backend) == deepSeekWebSearchBackend {
 		cfg.DeepSeekBaseURL, cfg.DeepSeekAPIKey, cfg.DeepSeekModel = s.m.deepSeekSearchCreds()
 		wall = 120 * time.Second
-		// 搜索词由 DeepSeek 端的模型自行决定，"test" 太空泛会让它跳过搜索直接作答。
+		// 検索語は DeepSeek 側のモデルが自分で決める。"test" は広すぎて、検索を飛ばして直接答える。
 		probeQuery = "DeepSeek company official website"
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), wall)
@@ -3616,7 +3616,7 @@ func (s *Server) testWebSearch(w http.ResponseWriter, r *http.Request) {
 }
 
 // mainSessions lists the task's main-agent conversation segments (newest-first) and
-// the current one. The frontend renders these as switchable sessions under 主 Agent.
+// the current one. The frontend renders these as switchable sessions under メイン Agent.
 func (s *Server) mainSessions(w http.ResponseWriter, r *http.Request) {
 	t := s.m.ResolveTask(r.URL.Query().Get("task"))
 	if t == nil {
@@ -3666,12 +3666,12 @@ func (s *Server) chat(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 409, "タスクを削除中のため、新しいメッセージを送信できません")
 		return
 	}
-	// 注意:任务暂停(paused)不拦截主 Agent 对话。主 Agent 编排会话独立于 planner/
-	// worker 的暂停,暂停中仍可继续对话(暂停只终止其正在进行的那一轮,见 control())。
+	// 注意。タスクの一時停止（paused）はメイン Agent の会話を止めない。メイン Agent の編成セッションは planner と
+	// worker の一時停止とは別で、一時停止中も会話を続けられる（一時停止が止めるのは、そのとき進んでいる 1 ラウンドだけ。control() を参照）。
 	var req struct {
 		Message     string           `json:"message"`
-		Attachments []chatAttachment `json:"attachments,omitempty"` // 方式1 上传的文件(路径相对任务工作目录)
-		Seg         *int             `json:"seg,omitempty"`         // 目标主会话分段;缺省=最新段
+		Attachments []chatAttachment `json:"attachments,omitempty"` // 方式 1 でアップロードしたファイル（パスはタスクの作業ディレクトリからの相対）
+		Seg         *int             `json:"seg,omitempty"`         // 対象のメインセッションの区間。未指定は最新の区間
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeErr(w, 400, err.Error())
@@ -3713,7 +3713,7 @@ func (s *Server) chat(w http.ResponseWriter, r *http.Request) {
 	}
 	segPtr := &mainSeg
 
-	// Persist + broadcast the human turn so the 主 Agent 编排会话 survives page
+	// Persist + broadcast the human turn so the メイン Agent の編成セッション survives page
 	// reloads and updates live: the conversation lives in the activity stream as
 	// worker="mainagent" (the per-task activity table, replayed via SSE). With
 	// attachments, the activity's Detail carries {text, attachments} so the transcript
@@ -3743,16 +3743,16 @@ func (s *Server) chat(w http.ResponseWriter, r *http.Request) {
 				s.engine.emitActivity(t, rec)
 			}
 			maTaskID, _ := strconv.ParseInt(t.ID, 10, 64)
-			resume := func() { s.reviveTask(t) } // set_goals 新增目标 → 把任务拉回 running
-			// 把上传附件的【绝对路径】清单拼进发给 agent 的消息,它据此用 Read/Bash 打开文件。
-			// taskDir = agent 的工作目录(CWD),与 chatUpload 落盘、ensureRunDir 一致。
+			resume := func() { s.reviveTask(t) } // set_goals で目標を追加 → タスクを running へ戻す
+			// アップロードした添付の絶対パスの一覧を、agent へ送るメッセージへ足す。agent はこれで Read/Bash からファイルを開く。
+			// taskDir は agent の作業ディレクトリ（CWD）。chatUpload の保存先と ensureRunDir と一致する。
 			taskDir := filepath.Join(s.m.dir, "tasks", t.ID)
 			agentMsg := composeAgentMessage(agentMessage, req.Attachments, taskDir)
 			s.engine.BeginLLMCall(t.ID)
 			_, err := ma.Chat(ctx, maTaskID, mainSeg, s.m.Assets(), t.Store, t.Goal, agentMsg, emit, t.Notify, resume, t.NotifyGoal, t.NotifyHint)
 			s.engine.EndLLMCall(t.ID)
 			if err != nil && ctx.Err() == nil {
-				s.engine.emitActivity(t, db.Activity{Worker: "mainagent", Kind: "text", IsError: true, Summary: "（主 Agent 出错：" + err.Error() + "）", MainSeg: segPtr})
+				s.engine.emitActivity(t, db.Activity{Worker: "mainagent", Kind: "text", IsError: true, Summary: "（メイン Agent のエラー：" + err.Error() + "）", MainSeg: segPtr})
 			}
 		}()
 		writeJSON(w, 202, map[string]any{"status": "accepted", "mode": "llm"})
@@ -3813,19 +3813,19 @@ func (s *Server) stopChat(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"status": "stopping"})
 }
 
-// fallbackChat is the no-LLM human-steering handler: simple命令 + 态势摘要.
+// fallbackChat is the no-LLM human-steering handler: 単純なコマンドと状況の要約.
 func (s *Server) fallbackChat(t *Task, msg string) string {
 	m := strings.TrimSpace(msg)
 	lower := strings.ToLower(m)
 	switch {
-	case strings.HasPrefix(m, "意图") || strings.HasPrefix(lower, "intent"):
-		text := strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(m, "意图"), "intent"))
+	case strings.HasPrefix(m, "インテント") || strings.HasPrefix(lower, "intent"):
+		text := strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(m, "インテント"), "intent"))
 		_, _ = t.Store.AddIntent(map[string]any{"summary": text}, 9, nil, "human")
-		return "已注入一条高优先级意图：" + text
-	case strings.HasPrefix(m, "提示") || strings.HasPrefix(lower, "hint"):
-		text := strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(m, "提示"), "hint"))
+		return "優先度の高いインテントを 1 件投入しました：" + text
+	case strings.HasPrefix(m, "ヒント") || strings.HasPrefix(lower, "hint"):
+		text := strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(m, "ヒント"), "hint"))
 		_, _ = t.Store.AddNode(db.KindHint, map[string]any{"text": text}, 0, "active", "human", nil)
-		return "已记录提示，规划者下次会读到：" + text
+		return "ヒントを記録しました。プランナーは次回読み取ります：" + text
 	default:
 		assetCounts, _ := s.m.Assets().CountsByType()
 		assets := 0
@@ -3834,7 +3834,7 @@ func (s *Server) fallbackChat(t *Task, msg string) string {
 		}
 		fnd, _ := t.Store.ListByKind(db.KindFinding, 1000)
 		fr, _ := t.Store.Frontier(1000)
-		return fmt.Sprintf("（规则模式，未配置 LLM）当前态势：资产 %d，待领意图 %d，确认发现 %d。\n可用指令：以\"意图 ...\"注入意图，\"提示 ...\"给规划者提示。", assets, len(fr), len(fnd))
+		return fmt.Sprintf("（ルールモード。LLM は未設定です）現在の状況：資産 %d、未取得のインテント %d、確認済みの検出事項 %d。\n使える指示：「インテント ...」でインテントを投入し、「ヒント ...」でプランナーにヒントを渡します。", assets, len(fr), len(fnd))
 	}
 }
 
@@ -3844,7 +3844,7 @@ func (s *Server) getReport(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 404, "no active task")
 		return
 	}
-	findings, _ := t.Store.ListByKind(db.KindFinding, 1000) // 纯漏洞（事实是独立的 KindFact，不进报告）
+	findings, _ := t.Store.ListByKind(db.KindFinding, 1000) // 脆弱性だけ（事実は独立した KindFact で、レポートには入れない）
 	counts := map[string]int{}
 	for _, ty := range []string{"root_domain", "ip", "subdomain", "app", "service", "endpoint"} {
 		ns, _ := s.m.Assets().QueryByType(ty, 100000, 0)
