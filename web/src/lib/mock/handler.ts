@@ -178,7 +178,7 @@ function advanceMockRetests() {
     if (Date.now() - Date.parse(retest.created_at) < 15000) continue;
     retest.status = "completed";
     retest.verdict = "inconclusive";
-    retest.summary = "演示环境未执行真实验证，无法确认漏洞当前状态。";
+    retest.summary = "デモ環境では実際の検証を行っていないため、脆弱性の現在の状態を確認できません";
     retest.evidence =
       "### 演示记录\n\n已关联原漏洞。此环境未连接真实 Agent，也未向目标发送请求；请在实际部署中执行复测。";
     retest.finished_at = new Date().toISOString();
@@ -198,7 +198,7 @@ function stopMockRetest(conversationID: number) {
     if (retest.conversation_id !== conversationID || !["pending", "running"].includes(retest.status)) continue;
     retest.status = "stopped";
     retest.finished_at = new Date().toISOString();
-    retest.error = "演示复测已停止";
+    retest.error = "デモの再テストを停止しました";
   }
 }
 const mockIntents = structuredClone(D.intents);
@@ -259,12 +259,14 @@ function publicMockTask(task: Task): Task {
 
 function mockArchiveTask(taskID: string): MockTaskArchive {
   const task = mockTasks.find((item) => item.id === taskID);
-  if (!task) throw new Error("任务不存在");
+  if (!task) throw new Error("タスクが存在しません");
   if (!["paused", "done", "failed", "timeout"].includes(task.status) && !task.paused) {
-    throw new Error(task.queued ? "排队中的任务必须先暂停" : "运行中的任务必须先暂停");
+    throw new Error(
+      task.queued ? "キュー待ちのタスクは先に一時停止してください" : "実行中のタスクは先に一時停止してください",
+    );
   }
   const existing = mockTaskArchives.find((item) => item.task_id === mockArchiveTaskID(taskID));
-  if (existing) throw new Error("任务已经在归档队列中");
+  if (existing) throw new Error("タスクはすでにアーカイブキューにあります");
   const dependent = mockTasks.find(
     (candidate) =>
       candidate.id !== taskID &&
@@ -275,7 +277,10 @@ function mockArchiveTask(taskID: string): MockTaskArchive {
           (archive.state === "archive_queued" || archive.state === "archiving"),
       ),
   );
-  if (dependent) throw new Error(`任务被未归档任务 #${dependent.id} 直接继承，暂不能归档`);
+  if (dependent)
+    throw new Error(
+      `このタスクは未アーカイブのタスク #${dependent.id} に直接継承されているため、まだアーカイブできません`,
+    );
 
   const numericTaskID = mockArchiveTaskID(taskID);
   const assetIDs = mockAssets.filter((asset) => asset.task_ids.includes(numericTaskID)).map((asset) => asset.id);
@@ -292,7 +297,7 @@ function mockArchiveTask(taskID: string): MockTaskArchive {
     id: nextMockTaskArchiveID++,
     task_id: numericTaskID,
     state: "archive_queued",
-    phase: "等待归档",
+    phase: "アーカイブ待ち",
     progress: 0,
     format_version: 1,
     original_size: 0,
@@ -332,14 +337,14 @@ function mockArchiveTask(taskID: string): MockTaskArchive {
   setTimeout(() => {
     if (archive.state !== "archive_queued") return;
     archive.state = "archiving";
-    archive.phase = "压缩任务数据";
+    archive.phase = "タスクデータを圧縮";
     archive.progress = 55;
     archive.updated_at = new Date().toISOString();
   }, 100);
   setTimeout(() => {
     if (archive.state !== "archiving" && archive.state !== "archive_queued") return;
     archive.state = "ready";
-    archive.phase = "归档完成";
+    archive.phase = "アーカイブ完了";
     archive.progress = 100;
     archive.archived_at = new Date().toISOString();
     archive.updated_at = archive.archived_at;
@@ -358,16 +363,17 @@ function mockArchiveTask(taskID: string): MockTaskArchive {
 }
 
 function mockRestoreArchive(archive: MockTaskArchive): void {
-  if (archive.state !== "ready" && archive.state !== "restore_failed") throw new Error("当前归档状态不可还原");
+  if (archive.state !== "ready" && archive.state !== "restore_failed")
+    throw new Error("現在のアーカイブ状態では復元できません");
   archive.state = "restore_queued";
-  archive.phase = "等待还原";
+  archive.phase = "復元待ち";
   archive.progress = 0;
   archive.error = undefined;
   archive.updated_at = new Date().toISOString();
   setTimeout(() => {
     if (archive.state !== "restore_queued") return;
     archive.state = "restoring";
-    archive.phase = "恢复任务数据";
+    archive.phase = "タスクデータを復元";
     archive.progress = 60;
     archive.updated_at = new Date().toISOString();
   }, 100);
@@ -392,20 +398,21 @@ function mockRestoreArchive(archive: MockTaskArchive): void {
 }
 
 function mockDeleteArchive(archive: MockTaskArchive): void {
-  if (archive.state !== "ready" && archive.state !== "delete_failed") throw new Error("当前归档状态不可永久删除");
+  if (archive.state !== "ready" && archive.state !== "delete_failed")
+    throw new Error("現在のアーカイブ状態では完全に削除できません");
   const dependent = mockTaskArchives.find(
     (candidate) => candidate.id !== archive.id && candidate.source_task_ids.includes(archive.task_id),
   );
-  if (dependent) throw new Error(`归档仍被任务 #${dependent.task_id} 依赖，无法永久删除`);
+  if (dependent) throw new Error(`アーカイブはタスク #${dependent.task_id} に依存されているため、完全に削除できません`);
   archive.state = "delete_queued";
-  archive.phase = "等待永久删除";
+  archive.phase = "完全削除待ち";
   archive.progress = 0;
   archive.error = undefined;
   archive.updated_at = new Date().toISOString();
   setTimeout(() => {
     if (archive.state !== "delete_queued") return;
     archive.state = "deleting";
-    archive.phase = "删除归档包";
+    archive.phase = "アーカイブパッケージを削除";
     archive.progress = 70;
   }, 100);
   setTimeout(() => {
@@ -655,7 +662,7 @@ function mockBuildAssetTree(list: (typeof mockFindings)[number][]): MockAssetTre
   const unassigned: MockAssetTreeNode = {
     key: UNASSIGNED_ASSET,
     kind: "none",
-    label: "未关联资产",
+    label: "資産に関連付けなし",
     self: 0,
     total: 0,
     critical: 0,
@@ -802,7 +809,7 @@ function mockScopeRows(
 function mockProfileResolution(profileID: number | undefined, source: TaskLLMResolution["source"]): TaskLLMResolution {
   const profile = D.llmProfiles.find((item) => Number(item.id) === profileID);
   if (!profile) {
-    return { name: "", format: "", model: "", source, available: false, reason: "LLM 配置不存在" };
+    return { name: "", format: "", model: "", source, available: false, reason: "LLM 設定が存在しません" };
   }
   return {
     profile_id: Number(profile.id),
@@ -811,7 +818,7 @@ function mockProfileResolution(profileID: number | undefined, source: TaskLLMRes
     model: profile.model,
     source,
     available: Boolean(profile.api_key_hint),
-    reason: profile.api_key_hint ? undefined : "LLM 配置未设置 API Key",
+    reason: profile.api_key_hint ? undefined : "LLM 設定に API Key が設定されていません",
   };
 }
 
@@ -831,7 +838,7 @@ function mockRoleResolution(task: Task, agentKey: "mainagent" | "planner" | "wor
         model: "",
         source: "task_chain",
         available: false,
-        reason: "任务 LLM 配置链额度已耗尽",
+        reason: "タスクの LLM 設定チェーンのクォータを使い切りました",
       };
     }
     return mockProfileResolution(task.active_llm_profile_id, "task_chain");
@@ -839,7 +846,7 @@ function mockRoleResolution(task: Task, agentKey: "mainagent" | "planner" | "wor
   const globalProfile = D.llmProfiles.find((item) => item.is_default);
   if (globalProfile) return mockProfileResolution(Number(globalProfile.id), "global_profile");
   return {
-    name: "全局配置",
+    name: "グローバル設定",
     format: D.llmConfig.provider,
     model: D.llmConfig.model,
     source: "environment",
@@ -850,7 +857,7 @@ function mockRoleResolution(task: Task, agentKey: "mainagent" | "planner" | "wor
 function bodyIDs(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   const ids = [...new Set(value.map((item) => String(item)).filter(Boolean))];
-  if (ids.length > 100) throw new Error("批量操作最多支持 100 个 ID");
+  if (ids.length > 100) throw new Error("一括操作は最大 100 個の ID までです");
   return ids;
 }
 
@@ -867,10 +874,10 @@ let nextMockWorkerMessageActivitySeq = mockActivity.reduce((maximum, item) => Ma
 
 function controlMockIntent(id: string, action: "pause" | "resume"): MockIntentControlResult {
   const intent = mockIntents.find((item) => item.id === id);
-  if (!intent) return { ok: false, error: "意图不存在" };
+  if (!intent) return { ok: false, error: "インテントが存在しません" };
   const requiredState = action === "pause" ? "running" : "paused";
   if (intent.inherited || intent.state !== requiredState) {
-    return { ok: false, state: intent.state, error: "Worker 状态已变化" };
+    return { ok: false, state: intent.state, error: "Worker の状態が変わりました" };
   }
   intent.state = action === "pause" ? "paused" : "open";
   return { ok: true, state: intent.state };
@@ -883,11 +890,11 @@ function sendMockWorkerMessage(
 ): MockIntentControlResult & { activitySeq?: number; requestId?: string } {
   const normalizedMessage = message.trim();
   const normalizedRequestId = requestId.trim();
-  if (!normalizedRequestId) return { ok: false, error: "request_id 不能为空" };
+  if (!normalizedRequestId) return { ok: false, error: "request_id は空にできません" };
   const previous = mockWorkerMessages.get(normalizedRequestId);
   if (previous) {
     if (previous.intentId !== id || previous.message !== normalizedMessage) {
-      return { ok: false, error: "request_id 已用于其他 Worker 消息" };
+      return { ok: false, error: "request_id は別の Worker メッセージですでに使われています" };
     }
     return {
       ok: true,
@@ -897,13 +904,17 @@ function sendMockWorkerMessage(
     };
   }
   const intent = mockIntents.find((item) => item.id === id);
-  if (!intent) return { ok: false, error: "意图不存在" };
+  if (!intent) return { ok: false, error: "インテントが存在しません" };
   if (intent.inherited || intent.state !== "paused") {
-    return { ok: false, state: intent.state, error: "仅已暂停的 Worker 可以发送消息，请先暂停" };
+    return {
+      ok: false,
+      state: intent.state,
+      error: "一時停止中の Worker にだけメッセージを送れます。先に一時停止してください",
+    };
   }
-  if (!normalizedMessage) return { ok: false, state: intent.state, error: "消息不能为空" };
+  if (!normalizedMessage) return { ok: false, state: intent.state, error: "メッセージは空にできません" };
   if (Array.from(normalizedMessage).length > 4000) {
-    return { ok: false, state: intent.state, error: "消息不能超过 4000 个字符" };
+    return { ok: false, state: intent.state, error: "メッセージは 4000 文字以内で入力してください" };
   }
 
   // The real endpoint transitions the intent paused->running, records the user turn,
@@ -937,13 +948,13 @@ function sendMockWorkerMessage(
 
 function controlMockTask(id: string, action: "pause" | "resume"): BatchControlItem {
   const task = mockTasks.find((item) => item.id === id);
-  if (!task) return { id, ok: false, error: "任务不存在" };
+  if (!task) return { id, ok: false, error: "タスクが存在しません" };
   if (task.status === "done" || task.status === "failed" || task.status === "timeout") {
-    return { id, ok: false, status: task.status, error: "终态任务不可控制" };
+    return { id, ok: false, status: task.status, error: "終了状態のタスクは操作できません" };
   }
   if (action === "pause") {
     if (task.paused || task.status === "paused") {
-      return { id, ok: false, status: task.status, error: "任务已经暂停" };
+      return { id, ok: false, status: task.status, error: "タスクはすでに一時停止しています" };
     }
     task.paused = true;
     task.queued = false;
@@ -951,7 +962,7 @@ function controlMockTask(id: string, action: "pause" | "resume"): BatchControlIt
     task.engine_mode = "paused";
   } else {
     if (!task.paused && task.status !== "paused") {
-      return { id, ok: false, status: task.status, error: "任务未暂停" };
+      return { id, ok: false, status: task.status, error: "タスクは一時停止していません" };
     }
     task.paused = false;
     task.queued = false;
@@ -1022,14 +1033,14 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
         label: finding.name || finding.vulnclass,
         description: `${finding.severity} · ${finding.summary}`,
       })),
-      ...D.companies.map((company) => ({ kind: "company", id: company.id, label: company.name, description: "企业" })),
+      ...D.companies.map((company) => ({ kind: "company", id: company.id, label: company.name, description: "企業" })),
       ...D.assets.map((asset) => ({
         kind: asset.type,
         id: asset.id,
         label:
           asset.type === "endpoint"
             ? `${asset.method || "GET"} ${asset.url}`
-            : asset.app_name || asset.url || asset.domain || asset.ip || asset.bundle_id || `资产 #${asset.id}`,
+            : asset.app_name || asset.url || asset.domain || asset.ip || asset.bundle_id || `資産 #${asset.id}`,
         description: [asset.type, asset.page_title, asset.service_name, asset.bundle_id, asset.ip]
           .filter(Boolean)
           .join(" · "),
@@ -1154,7 +1165,9 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
         byID.set(id, { id, ok: false, queued: false, error: (error as Error).message });
       }
     }
-    return { items: requested.map((id) => byID.get(id) ?? { id, ok: false, queued: false, error: "任务不存在" }) };
+    return {
+      items: requested.map((id) => byID.get(id) ?? { id, ok: false, queued: false, error: "タスクが存在しません" }),
+    };
   }
   if (seg[0] === "tasks" && seg[2] === "archive" && seg.length === 3 && m === "POST") {
     return publicMockTaskArchive(mockArchiveTask(seg[1]));
@@ -1174,17 +1187,17 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
     const sourceTaskIDs = [...((b.source_task_ids as string[] | undefined) ?? [])];
     const companyIDs = [...new Set((b.company_ids as number[] | undefined) ?? [])];
     if (companyIDs.some((companyID) => !mockCompanies.some((company) => company.id === companyID))) {
-      throw new Error("关联企业不存在或无效");
+      throw new Error("関連付ける企業が存在しないか、無効です");
     }
     const categoryID = typeof b.category_id === "number" ? b.category_id : undefined;
     const category = categoryID === undefined ? undefined : mockTaskCategories.find((item) => item.id === categoryID);
-    if (categoryID !== undefined && !category) throw new Error("任务分类不存在");
+    if (categoryID !== undefined && !category) throw new Error("タスクカテゴリが存在しません");
     const created: Task = {
       id,
       name: String(b.name ?? ""),
       category_id: category?.id,
       category_name: category?.name,
-      description: String(b.description ?? "新任务"),
+      description: String(b.description ?? "新しいタスク"),
       goal: String(b.goal ?? ""),
       status: "created",
       created_at: now.toISOString(),
@@ -1214,7 +1227,7 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
       const company = mockCompanies.find((candidate) => candidate.id === asset.company_id);
       setMockTaskAssetSource(id, asset.id, {
         task_source: "company",
-        task_source_summary: `任务创建时关联企业：${company?.name ?? `#${asset.company_id}`}`,
+        task_source_summary: `タスク作成時に関連付けた企業：${company?.name ?? `#${asset.company_id}`}`,
         task_source_node_id: undefined,
       });
     }
@@ -1226,9 +1239,9 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
   if (path === "/task-categories" && m === "GET") return { categories: mockTaskCategorySnapshot() };
   if (path === "/task-categories" && m === "POST") {
     const name = normalizedTemplateName(b.name);
-    if (!name) throw new Error("分类名称不能为空");
+    if (!name) throw new Error("カテゴリ名を入力してください");
     if (mockTaskCategories.some((category) => category.name.toLowerCase() === name.toLowerCase())) {
-      throw new Error("分类名称已存在");
+      throw new Error("カテゴリ名はすでに存在します");
     }
     const now = new Date().toISOString();
     const category: TaskCategory = {
@@ -1243,11 +1256,11 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
   }
   if (seg[0] === "task-categories" && seg.length === 2 && m === "PATCH") {
     const category = mockTaskCategories.find((item) => item.id === Number(seg[1]));
-    if (!category) throw new Error("任务分类不存在");
+    if (!category) throw new Error("タスクカテゴリが存在しません");
     const name = normalizedTemplateName(b.name);
-    if (!name) throw new Error("分类名称不能为空");
+    if (!name) throw new Error("カテゴリ名を入力してください");
     if (mockTaskCategories.some((item) => item.id !== category.id && item.name.toLowerCase() === name.toLowerCase())) {
-      throw new Error("分类名称已存在");
+      throw new Error("カテゴリ名はすでに存在します");
     }
     category.name = name;
     category.updated_at = new Date().toISOString();
@@ -1259,7 +1272,7 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
   if (seg[0] === "task-categories" && seg.length === 2 && m === "DELETE") {
     const categoryID = Number(seg[1]);
     const index = mockTaskCategories.findIndex((item) => item.id === categoryID);
-    if (index < 0) throw new Error("任务分类不存在");
+    if (index < 0) throw new Error("タスクカテゴリが存在しません");
     mockTaskCategories.splice(index, 1);
     for (const task of mockTasks) {
       if (task.category_id !== categoryID) continue;
@@ -1271,10 +1284,10 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
   if (path === "/tasks/category/batch" && m === "POST") {
     const requested = Array.isArray(b.task_ids) ? b.task_ids.map(String) : [];
     const taskIDs = [...new Set(requested)];
-    if (taskIDs.length === 0 || taskIDs.length > 100) throw new Error("task_ids 数量必须为 1-100");
+    if (taskIDs.length === 0 || taskIDs.length > 100) throw new Error("task_ids の件数は 1〜100 にしてください");
     const categoryID = typeof b.category_id === "number" ? b.category_id : undefined;
     const category = categoryID === undefined ? undefined : mockTaskCategories.find((item) => item.id === categoryID);
-    if (categoryID !== undefined && !category) throw new Error("任务分类不存在");
+    if (categoryID !== undefined && !category) throw new Error("タスクカテゴリが存在しません");
     const items = taskIDs.map((id) => {
       const task = mockTasks.find((item) => item.id === id);
       if (!task) return { id, ok: false, error: "task not found" };
@@ -1289,10 +1302,10 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
   }
   if (seg[0] === "tasks" && seg[2] === "category" && seg.length === 3 && m === "PATCH") {
     const task = mockTasks.find((item) => item.id === seg[1]);
-    if (!task) throw new Error("任务不存在");
+    if (!task) throw new Error("タスクが存在しません");
     const categoryID = typeof b.category_id === "number" ? b.category_id : undefined;
     const category = categoryID === undefined ? undefined : mockTaskCategories.find((item) => item.id === categoryID);
-    if (categoryID !== undefined && !category) throw new Error("任务分类不存在");
+    if (categoryID !== undefined && !category) throw new Error("タスクカテゴリが存在しません");
     task.category_id = category?.id;
     task.category_name = category?.name;
     return task;
@@ -1303,11 +1316,11 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
     const name = normalizedTemplateName(b.name);
     const description = String(b.description ?? "").trim();
     const goal = String(b.goal ?? "").trim();
-    if (!name || !description || !goal) throw new Error("请填写模板名称、描述和目标");
+    if (!name || !description || !goal) throw new Error("テンプレート名、説明、目標を入力してください");
     if (
       mockTaskTemplates.some((template) => normalizedTemplateName(template.name).toLowerCase() === name.toLowerCase())
     ) {
-      throw new Error("模板名称已存在");
+      throw new Error("テンプレート名はすでに存在します");
     }
     const nextID = mockTaskTemplates.reduce((max, template) => Math.max(max, template.id), 0) + 1;
     const created: TaskTemplate = {
@@ -1327,13 +1340,13 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
     const name = typeof b.name === "string" ? normalizedTemplateName(b.name) : template.name;
     const description = typeof b.description === "string" ? b.description.trim() : template.description;
     const goal = typeof b.goal === "string" ? b.goal.trim() : template.goal;
-    if (!name || !description || !goal) throw new Error("请填写模板名称、描述和目标");
+    if (!name || !description || !goal) throw new Error("テンプレート名、説明、目標を入力してください");
     if (
       mockTaskTemplates.some(
         (item) => item.id !== template.id && normalizedTemplateName(item.name).toLowerCase() === name.toLowerCase(),
       )
     ) {
-      throw new Error("模板名称已存在");
+      throw new Error("テンプレート名はすでに存在します");
     }
     template.name = name;
     template.description = description;
@@ -1350,12 +1363,12 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
   }
   if (seg[0] === "tasks" && seg.length === 2 && m === "GET") {
     const task = mockTasks.find((item) => item.id === seg[1]);
-    if (!task) throw new Error("任务不存在");
+    if (!task) throw new Error("タスクが存在しません");
     return publicMockTask(task);
   }
   if (seg[0] === "tasks" && seg.length === 2 && m === "PATCH") {
     const task = mockTasks.find((item) => item.id === seg[1]);
-    if (!task) throw new Error("任务不存在");
+    if (!task) throw new Error("タスクが存在しません");
     if (typeof b.name === "string") task.name = b.name.trim();
     if (typeof b.pinned === "boolean") {
       task.pinned = b.pinned;
@@ -1437,7 +1450,7 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
   }
   if (seg[0] === "tasks" && seg[2] === "llm" && seg[3] === "resolution" && m === "GET") {
     const task = mockTasks.find((item) => item.id === seg[1]);
-    if (!task) throw new Error("任务不存在");
+    if (!task) throw new Error("タスクが存在しません");
     return {
       mainagent: mockRoleResolution(task, "mainagent"),
       planner: mockRoleResolution(task, "planner"),
@@ -1458,7 +1471,7 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
         intent.inherited ||
         (intent.state !== "running" && intent.state !== "paused" && intent.state !== "open")
       ) {
-        throw new Error("Worker 状态已变化");
+        throw new Error("Worker の状態が変わりました");
       }
       const numId = Number(id.replace(/\D/g, "")) || 0;
       if (b.mode === "hard") {
@@ -1482,13 +1495,13 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
     }
     const action = b.action === "resume" ? "resume" : "pause";
     const result = controlMockIntent(id, action);
-    if (!result.ok) throw new Error(result.error ?? "Worker 状态已变化");
+    if (!result.ok) throw new Error(result.error ?? "Worker の状態が変わりました");
     return { id: Number(id.replace(/\D/g, "")) || 0, state: result.state };
   }
   if (seg[0] === "tasks" && seg[2] === "intents" && seg[4] === "messages" && m === "POST") {
     const id = seg[3];
     const result = sendMockWorkerMessage(id, String(b.message ?? ""), String(b.request_id ?? ""));
-    if (!result.ok) throw new Error(result.error ?? "Worker 状态已变化");
+    if (!result.ok) throw new Error(result.error ?? "Worker の状態が変わりました");
     return {
       id: Number(id.replace(/\D/g, "")) || 0,
       state: result.state ?? "running",
@@ -1499,7 +1512,7 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
   if (seg[0] === "tasks" && seg.length === 3 && seg[2] === "control" && m === "POST") {
     const action = b.action === "resume" ? "resume" : "pause";
     const result = controlMockTask(seg[1], action);
-    if (!result.ok) throw new Error(result.error ?? "任务状态已变化");
+    if (!result.ok) throw new Error(result.error ?? "タスクの状態が変わりました");
     const task = mockTasks.find((item) => item.id === seg[1]);
     return { id: seg[1], paused: Boolean(task?.paused), queued: Boolean(task?.queued), status: task?.status ?? "" };
   }
@@ -1649,13 +1662,14 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
   if (seg[0] === "tasks" && seg[2] === "assets" && seg.length === 3 && m === "POST") {
     const task = mockTasks.find((item) => item.id === seg[1]);
     const numericTaskID = mockTaskAssetID(seg[1]);
-    if (!task || numericTaskID === undefined) throw new Error("任务不存在");
+    if (!task || numericTaskID === undefined) throw new Error("タスクが存在しません");
     if (Array.isArray(b.scope)) {
-      if (b.scope.length === 0) throw new Error("请填写有效测试范围");
+      if (b.scope.length === 0) throw new Error("有効なテスト範囲を入力してください");
       const rules: CompanyScopeRule[] = b.scope.map((candidate, index) => {
         if (typeof candidate === "string") {
           const issue = classifyCompanyScopeLine(candidate, index + 1);
-          if (!issue.rule || issue.error) throw new Error(`第 ${index + 1} 条范围无效：${issue.error ?? "无法识别"}`);
+          if (!issue.rule || issue.error)
+            throw new Error(`範囲の ${index + 1} 件目が無効です：${issue.error ?? "識別できません"}`);
           return issue.rule;
         }
         const item = candidate as { kind?: unknown; value?: unknown };
@@ -1664,8 +1678,8 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
           item?.kind && isCompanyScopeKind(item.kind)
             ? { kind: item.kind, value }
             : classifyCompanyScopeLine(value, index + 1).rule;
-        const error = rule ? companyScopeRuleError(rule) : "无法识别";
-        if (!rule || error) throw new Error(`第 ${index + 1} 条范围无效：${error}`);
+        const error = rule ? companyScopeRuleError(rule) : "識別できません";
+        if (!rule || error) throw new Error(`範囲の ${index + 1} 件目が無効です：${error}`);
         return rule;
       });
       const mutation: TaskAssetScopeMutation = {
@@ -1686,7 +1700,7 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
           task_id: numericTaskID,
           kind: rule.kind === "domain" ? "root_domain" : rule.kind,
           source: "manual",
-          reason: "用户在测试资产页手工新增",
+          reason: "ユーザーがテスト対象資産ページで手動追加",
         };
         if (rule.kind === "domain") scope.domain = normalized;
         else if (rule.kind === "ip") scope.net = `${normalized}/${normalized.includes(":") ? 128 : 32}`;
@@ -1726,7 +1740,7 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
         }
         setMockTaskAssetSource(seg[1], asset.id, {
           task_source: "manual",
-          task_source_summary: "用户在测试资产页手工新增",
+          task_source_summary: "ユーザーがテスト対象資産ページで手動追加",
           task_source_node_id: undefined,
         });
       }
@@ -1735,9 +1749,10 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
     }
     const ids = [...new Set(Array.isArray(b.asset_ids) ? b.asset_ids.map(Number) : [])];
     const sourceSummary = String(b.source_summary ?? "").trim();
-    if (ids.length === 0 || ids.length > 100 || !sourceSummary) throw new Error("请选择资产并填写来源说明");
+    if (ids.length === 0 || ids.length > 100 || !sourceSummary)
+      throw new Error("資産を選択し、発生元の説明を入力してください");
     const requestedAssets = ids.map((id) => mockAssets.find((asset) => asset.id === id));
-    if (requestedAssets.some((asset) => !asset)) throw new Error("资产不存在");
+    if (requestedAssets.some((asset) => !asset)) throw new Error("資産が存在しません");
     const mutation: TaskAssetMutation = { requested: ids.length, attached: 0, existing: 0 };
     for (const asset of requestedAssets) {
       if (!asset) continue;
@@ -1757,8 +1772,8 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
   if (seg[0] === "tasks" && seg[2] === "assets" && seg.length === 4 && m === "DELETE") {
     const numericTaskID = mockTaskAssetID(seg[1]);
     const asset = mockAssets.find((item) => item.id === Number(seg[3]));
-    if (numericTaskID === undefined || !asset) throw new Error("任务或资产不存在");
-    if (!asset.task_ids.includes(numericTaskID)) throw new Error("资产未关联当前任务");
+    if (numericTaskID === undefined || !asset) throw new Error("タスクまたは資産が存在しません");
+    if (!asset.task_ids.includes(numericTaskID)) throw new Error("資産は現在のタスクに関連付けられていません");
     asset.task_ids = asset.task_ids.filter((id) => id !== numericTaskID);
     deleteMockTaskAssetSources(seg[1], asset.id);
     return { detached: asset.id };
@@ -1799,9 +1814,9 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
   if (path === "/companies" && m === "GET") return structuredClone(mockCompanies);
   if (path === "/companies" && m === "POST") {
     const name = String(b.name ?? "").trim();
-    if (!name) throw new Error("企业名称不能为空");
+    if (!name) throw new Error("企業名は空にできません");
     if (mockCompanies.some((company) => company.name.toLowerCase() === name.toLowerCase())) {
-      throw new Error("企业已存在");
+      throw new Error("企業はすでに存在します");
     }
     const id = mockCompanies.reduce((max, company) => Math.max(max, company.id), 0) + 1;
     const scopeResult = mockScopeRows(id, b.scope);
@@ -1817,17 +1832,18 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
   }
   if (seg[0] === "companies" && seg[2] === "scope" && m === "POST") {
     const company = mockCompanies.find((item) => item.id === Number(seg[1]));
-    if (!company) throw new Error("企业不存在");
+    if (!company) throw new Error("企業が存在しません");
     const reset = b.reset === true;
     const scopeResult = mockScopeRows(company.id, b.scope, reset ? [] : (company.scope ?? []));
-    if (reset && scopeResult.invalid > 0) throw new Error("企业范围包含无效规则，未覆盖原有范围");
+    if (reset && scopeResult.invalid > 0)
+      throw new Error("企業の範囲に無効なルールが含まれているため、元の範囲は上書きされていません");
     company.scope = reset ? scopeResult.rows : [...(company.scope ?? []), ...scopeResult.rows];
     return { added: scopeResult.rows.length, skipped: scopeResult.skipped, invalid: scopeResult.invalid };
   }
   if (seg[0] === "companies" && seg.length === 2 && m === "DELETE") {
     const id = Number(seg[1]);
     const index = mockCompanies.findIndex((item) => item.id === id);
-    if (index < 0) throw new Error("企业不存在");
+    if (index < 0) throw new Error("企業が存在しません");
     mockCompanies.splice(index, 1);
     let assetsDeleted = 0;
     for (let assetIndex = mockAssets.length - 1; assetIndex >= 0; assetIndex--) {
@@ -1932,7 +1948,7 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
   }
   if (seg[0] === "exploration" && seg[1] === "findings" && seg[3] === "retests") {
     const finding = mockFindings.find((item) => item.id === seg[2]);
-    if (!finding) throw new Error("漏洞不存在");
+    if (!finding) throw new Error("脆弱性が存在しません");
     const findingID = D.findings.findIndex((item) => item.id === finding.id) + 1;
     if (m === "GET") return { retests: structuredClone(mockRetests.filter((item) => item.finding_id === findingID)) };
     if (m === "POST") {
@@ -1945,7 +1961,7 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
       mockConversations.unshift({
         id: conversationID,
         agent_key: "retester",
-        title: `复测 #${finding.id} · ${finding.name || finding.vulnclass}`,
+        title: `再テスト #${finding.id} · ${finding.name || finding.vulnclass}`,
         pinned: false,
         created_at: now,
         updated_at: now,
@@ -1971,7 +1987,7 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
           worker: "retester",
           ts: now,
           kind: "user",
-          summary: `请复测漏洞 #${finding.id}`,
+          summary: `脆弱性 #${finding.id} を再テストしてください`,
           detail: retest.notes,
         },
         {
@@ -1979,8 +1995,8 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
           worker: "retester",
           ts: now,
           kind: "text",
-          summary: "演示复测进行中（未向目标发送请求）",
-          detail: "演示复测进行中（未向目标发送请求）",
+          summary: "デモの再テストを実行中です（対象にはリクエストを送信していません）",
+          detail: "デモの再テストを実行中です（対象にはリクエストを送信していません）",
         },
       ];
       return { retest: structuredClone(retest), created: true };
@@ -2006,7 +2022,7 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
   // seg = ["exploration","findings",<id>,"traffic", ...]
   if (seg[0] === "exploration" && seg[1] === "findings" && seg[3] === "traffic") {
     const findingID = seg[2];
-    if (!mockFindings.some((item) => item.id === findingID)) throw new Error("漏洞不存在");
+    if (!mockFindings.some((item) => item.id === findingID)) throw new Error("脆弱性が存在しません");
     const bindings = mockTrafficBindings(findingID);
     const bumpVersion = () => {
       mockFindingTrafficVersion[findingID] = (mockFindingTrafficVersion[findingID] ?? 1) + 1;
@@ -2015,7 +2031,7 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
     // 单条报文详情:GET /traffic/{binding_id}
     if (seg.length === 5 && seg[4] !== "order" && m === "GET") {
       const binding = bindings.find((item) => item.id === seg[4]);
-      if (!binding) throw new Error("证据不存在");
+      if (!binding) throw new Error("証拠が存在しません");
       const body = mockEvidenceBodies[binding.snapshot.source_traffic_id] ?? { req: "", resp: "" };
       return {
         binding: structuredClone(binding),
@@ -2026,7 +2042,7 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
     // 报文正文分页:GET /traffic/{binding_id}/body —— demo 正文不截断,直接返回空续页。
     if (seg.length === 6 && seg[5] === "body" && m === "GET") {
       const binding = bindings.find((item) => item.id === seg[4]);
-      if (!binding) throw new Error("证据不存在");
+      if (!binding) throw new Error("証拠が存在しません");
       const body = mockEvidenceBodies[binding.snapshot.source_traffic_id] ?? { req: "", resp: "" };
       const side = q.get("side") === "request" ? body.req : body.resp;
       return mockEvidencePreview(side);
@@ -2060,7 +2076,7 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
     // 编辑说明 / 解绑:PATCH|DELETE /traffic/{binding_id}
     if (seg.length === 5 && (m === "PATCH" || m === "DELETE")) {
       const index = bindings.findIndex((item) => item.id === seg[4]);
-      if (index < 0) throw new Error("证据不存在");
+      if (index < 0) throw new Error("証拠が存在しません");
       if (m === "DELETE") {
         bindings.splice(index, 1);
       } else {
@@ -2223,7 +2239,10 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
   if (path === "/settings/web-search/test") return { ok: true, count: 5, backend: D.settings.web_search_backend };
   if (path === "/settings/python/detect") return { python_interpreter: "/usr/bin/python3" };
   if (path === "/chat")
-    return { reply: "（demo）我已把该建议注入为一条高优意图，work agent 会尽快执行。", mode: "hint" };
+    return {
+      reply: "（demo）この提案を優先度の高いインテントとして注入しました。work agent がまもなく実行します。",
+      mode: "hint",
+    };
   if (path === "/gc") return { removed: 0 };
 
   // ── 工具执行历史 ──
@@ -2301,7 +2320,7 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
   }
   if (path === "/conversations" && m === "POST") {
     const now = new Date().toISOString();
-    const title = String(b.title ?? "").trim() || "新对话";
+    const title = String(b.title ?? "").trim() || "新しいチャット";
     const conversation: Conversation = {
       id: mockConversations.reduce((max, item) => Math.max(max, item.id), 0) + 1,
       agent_key: String(b.agent_key ?? "mainagent"),
@@ -2369,7 +2388,7 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
   // ── tools ──
   if (path === "/tools" && m === "GET") return { tools: D.tools };
   if (path === "/tools/custom" && m === "POST") return { key: String(b.key ?? "custom-tool") };
-  if (path === "/tools/custom/test") return { output: "（demo）工具执行输出示例。", is_error: false };
+  if (path === "/tools/custom/test") return { output: "（demo）ツール実行出力のサンプルです。", is_error: false };
 
   // ── mcp ──
   if (path === "/mcp" && m === "GET") return { servers: D.mcpServers };
@@ -2406,22 +2425,22 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
   if (seg[0] === "intercept" && seg[1] === "pending" && seg[3] === "decide") {
     const id = Number(seg[2]);
     const row = mockInterceptHistory.find((r) => r.id === id) ?? mockInterceptPending.find((r) => r.id === id);
-    if (row?.status !== "pending") throw new Error("审批已处理或不存在，请刷新记录");
-    if (b.decision !== "allowed" && b.decision !== "denied") throw new Error("无效审批动作");
+    if (row?.status !== "pending") throw new Error("承認は処理済みか存在しません。記録を更新してください");
+    if (b.decision !== "allowed" && b.decision !== "denied") throw new Error("無効な承認操作です");
     row.status = b.decision;
     row.decided_at = new Date().toISOString();
     const detail = mockInterceptDetails[id];
     if (detail) {
       detail.effective_action = b.decision === "allowed" ? "allow" : "deny";
-      detail.decision_reason = b.decision === "allowed" ? "人工允许执行" : "人工拒绝执行";
+      detail.decision_reason = b.decision === "allowed" ? "手動で実行を許可" : "手動で実行を拒否";
       detail.execution_status = b.decision === "allowed" ? "unknown" : "not_executed";
-      detail.output = b.decision === "allowed" ? "演示模式未执行工具。" : "";
+      detail.output = b.decision === "allowed" ? "デモモードのためツールは実行されていません。" : "";
     }
     return { ok: true };
   }
   if (seg[0] === "intercept" && seg[1] === "history" && seg.length === 3) {
     const row = mockInterceptHistory.find((r) => r.id === Number(seg[2]));
-    if (!row) throw new Error("审批记录不存在");
+    if (!row) throw new Error("承認記録が存在しません");
     return { ...row, audit: mockInterceptDetails[row.id] ?? null };
   }
   if (seg[0] === "intercept" && seg[1] === "pending" && seg.length === 3 && m === "GET")
@@ -2429,8 +2448,8 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
   if (path === "/intercept/history" || (seg[0] === "intercept" && seg[1] === "task")) {
     const status = q.get("status") || "";
     const decisionSource = q.get("decision_source") || "";
-    if (status && !["pending", "allowed", "denied", "timeout"].includes(status)) throw new Error("无效审批状态");
-    if (decisionSource && !["model", "rule", "unknown"].includes(decisionSource)) throw new Error("无效判定来源");
+    if (status && !["pending", "allowed", "denied", "timeout"].includes(status)) throw new Error("無効な承認状態です");
+    if (decisionSource && !["model", "rule", "unknown"].includes(decisionSource)) throw new Error("無効な判定元です");
     const filtered = mockInterceptHistory.filter((row) => {
       const source =
         row.decision_source || (row.rule_id ? "rule" : row.reason?.startsWith("[模型]") ? "model" : "unknown");
@@ -2478,7 +2497,7 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
   // 必须显式命中：路径以 s 结尾会被下面的读兜底判成集合返回 []，items 就成了 undefined。
   if (seg.at(-1) === "side-questions") {
     if (m === "GET") return { items: [], current: null, next_cursor: 0, snapshot: null };
-    if (m === "POST") throw new Error("演示模式不支持旁路提问");
+    if (m === "POST") throw new Error("デモモードではサイド質問に対応していません");
   }
 
   // ── 写操作兜底：成功但不落库 ──

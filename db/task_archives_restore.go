@@ -211,18 +211,18 @@ WHERE archive.id=$1 FOR UPDATE OF archive,task`, archiveID).Scan(&taskID, &expID
 	categoryID, _ := jsonInt64(taskRow["category_id"])
 	if categoryID > 0 && !rowExists(tx, "task_categories", categoryID) {
 		taskRow["category_id"] = nil
-		warnings = append(warnings, fmt.Sprintf("任务分类 %d 已删除，已恢复为未分类", categoryID))
+		warnings = append(warnings, fmt.Sprintf("タスクカテゴリ %d は削除済みのため、未分類に戻しました", categoryID))
 	}
 	companyID, _ := jsonInt64(taskRow["company_id"])
 	if companyID > 0 && !rowExists(tx, "companies", companyID) {
 		taskRow["company_id"] = nil
-		warnings = append(warnings, fmt.Sprintf("任务企业 %d 已删除，企业关联已跳过", companyID))
+		warnings = append(warnings, fmt.Sprintf("タスクの企業 %d は削除済みのため、企業との関連付けをスキップしました", companyID))
 	}
 	for _, key := range []string{"llm_profile_id", "active_llm_profile_id"} {
 		profileID, _ := jsonInt64(taskRow[key])
 		if profileID > 0 && !rowExists(tx, "llm_profiles", profileID) {
 			taskRow[key] = nil
-			warnings = append(warnings, fmt.Sprintf("LLM 配置 %d 已删除，已从任务配置中移除", profileID))
+			warnings = append(warnings, fmt.Sprintf("LLM 設定 %d は削除済みのため、タスクの設定から外しました", profileID))
 		}
 	}
 	if err := restoreExplorationStub(tx, snapshot.Tables["explorations"], expID); err != nil {
@@ -684,11 +684,11 @@ func restoreInterceptRows(tx *sql.Tx, raw json.RawMessage) error {
 		}
 		if status, _ := row["status"].(string); status == "pending" {
 			row["status"] = "timeout"
-			row["reason"] = "任务归档期间审批已超时"
+			row["reason"] = "タスクのアーカイブ中に承認がタイムアウトしました"
 			row["decided_at"] = time.Now().UTC()
 			if audit, ok := row["audit"].(map[string]any); ok {
 				audit["effective_action"] = "deny"
-				audit["decision_reason"] = "任务归档期间审批已超时"
+				audit["decision_reason"] = "タスクのアーカイブ中に承認がタイムアウトしました"
 				audit["execution_status"] = "not_executed"
 			}
 		} else if audit, ok := row["audit"].(map[string]any); ok && audit["execution_status"] == "awaiting_result" {

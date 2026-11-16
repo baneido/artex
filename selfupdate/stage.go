@@ -128,7 +128,7 @@ func Stage(ctx context.Context, c *http.Client, rel *Release, currentVersion str
 		prog(PhaseStaged, -1, "警告：写入升级标记失败，本次升级将没有自动回滚保护")
 	}
 
-	prog(PhaseStaged, 100, "新版本已就绪，正在重启…")
+	prog(PhaseStaged, 100, "新しいバージョンの準備ができました。再起動中…")
 	return nil
 }
 
